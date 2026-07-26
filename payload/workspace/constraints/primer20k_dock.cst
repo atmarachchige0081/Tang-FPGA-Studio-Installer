@@ -1,0 +1,14 @@
+// Sipeed Tang Primer 20K + Dock (GW2A-LV18PG256C8/I7)
+// Pin sources: Sipeed's official TangPrimer-20K examples and board wiki.
+IO_LOC  "clk_27mhz" H11;
+IO_PORT "clk_27mhz" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+
+IO_LOC  "led_n[0]" L16;
+IO_LOC  "led_n[1]" L14;
+IO_LOC  "led_n[2]" N14;
+IO_LOC  "led_n[3]" N16;
+IO_PORT "led_n[0]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_PORT "led_n[1]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_PORT "led_n[2]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_PORT "led_n[3]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+

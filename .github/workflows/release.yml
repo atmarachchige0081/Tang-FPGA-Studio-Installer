@@ -1,0 +1,66 @@
+name: Build, attest, and release Windows installer
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out installer source
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build installer and checksum
+        shell: pwsh
+        run: .\build-installer.ps1 -SkipInnoInstall
+
+      - name: Test packaged dark and light UI
+        shell: pwsh
+        run: .\test-installer.ps1
+
+      - name: Generate signed build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/TangPrimerFPGAStudio-Setup-1.1.0.exe
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: TangPrimerFPGAStudio-Setup-1.1.0
+          if-no-files-found: error
+          path: |
+            dist/TangPrimerFPGAStudio-Setup-1.1.0.exe
+            dist/TangPrimerFPGAStudio-Setup-1.1.0.exe.sha256
+
+      - name: Publish tagged GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME `
+            --verify-tag `
+            --latest `
+            --title "Tang Primer FPGA Studio Installer $env:GITHUB_REF_NAME" `
+            --notes-file RELEASE_NOTES.md `
+            dist/TangPrimerFPGAStudio-Setup-1.1.0.exe `
+            dist/TangPrimerFPGAStudio-Setup-1.1.0.exe.sha256

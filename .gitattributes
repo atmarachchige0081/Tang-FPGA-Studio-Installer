@@ -1,0 +1,11 @@
+* text=auto
+*.ps1 text eol=crlf
+*.iss text eol=crlf
+*.cmd text eol=crlf
+*.py text eol=lf
+*.sv text eol=lf
+*.v text eol=lf
+*.cst text eol=lf
+*.png binary
+*.ico binary
+*.exe binary

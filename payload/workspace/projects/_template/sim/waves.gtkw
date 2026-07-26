@@ -1,0 +1,16 @@
+[*]
+[*] FPGA learning-project template waveform layout
+[timestart] 0
+[size] 1400 850
+[pos] -1 -1
+[treeopen] tb_top.
+[treeopen] tb_top.dut.
+[sst_width] 260
+[signals_width] 300
+[sst_expanded] 1
+@28
+tb_top.clk_27mhz
+@22
+tb_top.btn_n[4:0]
+tb_top.led_n[5:0]
+tb_top.dut.counter[23:0]
