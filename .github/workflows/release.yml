@@ -81,14 +81,15 @@ jobs:
         if: steps.release.outputs.published != 'true' && steps.release.outputs.tag_exists != 'True'
         shell: pwsh
         run: |
+          $source = Join-Path $env:RUNNER_TEMP 'studio-upstream'
           git clone --quiet --depth 1 --branch '${{ steps.release.outputs.tag }}' `
-            https://github.com/atmarachchige0081/Tang-Primer-20K-FPGA-Studio.git upstream
+            https://github.com/atmarachchige0081/Tang-Primer-20K-FPGA-Studio.git $source
           if ($LASTEXITCODE -ne 0) { throw 'Unable to fetch the released Studio source.' }
 
       - name: Synchronize approved application and workspace files
         if: steps.release.outputs.published != 'true' && steps.release.outputs.tag_exists != 'True'
         shell: pwsh
-        run: .\sync-upstream.ps1 -SourceRoot upstream -Version '${{ steps.release.outputs.version }}'
+        run: .\sync-upstream.ps1 -SourceRoot (Join-Path $env:RUNNER_TEMP 'studio-upstream') -Version '${{ steps.release.outputs.version }}'
 
       - name: Generate installer release notes
         if: steps.release.outputs.published != 'true' && steps.release.outputs.tag_exists != 'True'
