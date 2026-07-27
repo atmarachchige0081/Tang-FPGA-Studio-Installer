@@ -8,6 +8,10 @@ param(
     [string] $Port,
     [ValidateRange(300, 4000000)]
     [int] $Baud = 115200,
+    [string] $Testbench,
+    [ValidatePattern('^[A-Za-z_]\w*$')]
+    [string] $TestbenchTop = 'tb_top',
+    [string] $WaveLayout,
     [switch] $NoBuild
 )
 
@@ -54,6 +58,8 @@ Tang Primer 20K FPGA commands
   .\fpga.ps1 clean                 Remove generated build files
 
 Add -NoBuild to upload/flash to reuse build/top.fs.
+Use -Testbench sim/tb_name.sv -TestbenchTop tb_name to select one testbench.
+Use -WaveLayout sim/name.gtkw with wave/debug to select a GTKWave layout.
 Use -Project projects/<folder> to run a project from the workspace root.
 '@ | Write-Host
 }
@@ -141,16 +147,32 @@ function Invoke-Lint {
 function Invoke-Simulation {
     New-BuildDirectory
     $rtl = @(Get-RtlSources | ForEach-Object { Get-RelativeProjectPath $_.FullName })
-    $testbenches = @(Get-ChildItem -LiteralPath (Join-Path $ProjectRoot 'sim') -Recurse -File |
-        Where-Object { $_.Extension -in @('.v', '.sv') } |
-        Sort-Object FullName |
-        ForEach-Object { Get-RelativeProjectPath $_.FullName })
+    $testbenches = @(
+        if ($Testbench) {
+            $candidate = [IO.Path]::GetFullPath((Join-Path $ProjectRoot $Testbench))
+            $simulationRoot = [IO.Path]::GetFullPath((Join-Path $ProjectRoot 'sim')).TrimEnd('\') + '\'
+            if (-not $candidate.StartsWith($simulationRoot, [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Selected testbench must be under sim/: $Testbench"
+            }
+            if (-not (Test-Path -LiteralPath $candidate -PathType Leaf) -or
+                [IO.Path]::GetExtension($candidate) -notin @('.v', '.sv')) {
+                throw "Selected testbench does not exist or is not Verilog/SystemVerilog: $Testbench"
+            }
+            Get-RelativeProjectPath $candidate
+        } else {
+            Get-ChildItem -LiteralPath (Join-Path $ProjectRoot 'sim') -Recurse -File |
+                Where-Object { $_.Extension -in @('.v', '.sv') } |
+                Sort-Object FullName |
+                ForEach-Object { Get-RelativeProjectPath $_.FullName }
+        }
+    )
     if ($testbenches.Count -eq 0) {
         throw 'No simulation testbench was found under sim/.'
     }
 
-    Invoke-NativeTool 'iverilog' (@('-g2012', '-Wall', '-s', 'tb_top', '-o', 'build/tb_top.vvp') + $rtl + $testbenches)
-    Invoke-NativeTool 'vvp' @('build/tb_top.vvp')
+    $simulationOutput = "build/$TestbenchTop.vvp"
+    Invoke-NativeTool 'iverilog' (@('-g2012', '-Wall', '-s', $TestbenchTop, '-o', $simulationOutput) + $rtl + $testbenches)
+    Invoke-NativeTool 'vvp' @($simulationOutput)
     Write-Host 'Simulation passed; waveform: build/waves.vcd' -ForegroundColor Green
 }
 
@@ -159,7 +181,12 @@ function Open-Waveform {
     if (-not (Test-Path -LiteralPath $waveform)) {
         Invoke-Simulation
     }
-    $saveFile = Join-Path $ProjectRoot 'sim\waves.gtkw'
+    $saveRelative = if ($WaveLayout) { $WaveLayout } else { 'sim\waves.gtkw' }
+    $saveFile = [IO.Path]::GetFullPath((Join-Path $ProjectRoot $saveRelative))
+    $simulationRoot = [IO.Path]::GetFullPath((Join-Path $ProjectRoot 'sim')).TrimEnd('\') + '\'
+    if (-not $saveFile.StartsWith($simulationRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Wave layout must be under sim/: $saveRelative"
+    }
     $gtkwaveArgs = @('--dump', ('"' + $waveform + '"'))
     if (Test-Path -LiteralPath $saveFile) {
         $gtkwaveArgs += @('--save', ('"' + $saveFile + '"'))

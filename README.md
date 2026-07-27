@@ -18,7 +18,7 @@ Primer 20K Dock.
 ## One-file installation
 
 1. Open the [latest release](https://github.com/atmarachchige0081/TangPrimer-FPGA-Studio-Installer/releases/latest).
-2. Download `TangPrimerFPGAStudio-Setup-1.1.0.exe`.
+2. Download the newest `TangPrimerFPGAStudio-Setup-X.Y.Z.exe` asset.
 3. Double-click the downloaded file and approve the Windows administrator prompt.
 4. Keep **Install or verify the pinned FPGA toolchain** selected.
 5. Keep **Create a desktop shortcut** selected and finish installation.
@@ -27,7 +27,7 @@ Primer 20K Dock.
 The first setup can take several minutes because it downloads and verifies the
 approximately 1.9 GB FPGA toolchain. Later launches work offline.
 
-Windows may currently display **Unknown publisher** because v1.1.0 does not
+Windows may currently display **Unknown publisher** because the project does not
 have a commercial Authenticode certificate. See [Release trust](#release-trust)
 before deciding whether to run the installer.
 
@@ -70,13 +70,13 @@ workflow run. A SHA-256 checksum is published beside every installer.
 Verify the checksum in PowerShell:
 
 ```powershell
-Get-FileHash .\TangPrimerFPGAStudio-Setup-1.1.0.exe -Algorithm SHA256
+Get-FileHash .\TangPrimerFPGAStudio-Setup-X.Y.Z.exe -Algorithm SHA256
 ```
 
 Verify the signed GitHub provenance with GitHub CLI:
 
 ```powershell
-gh attestation verify .\TangPrimerFPGAStudio-Setup-1.1.0.exe `
+gh attestation verify .\TangPrimerFPGAStudio-Setup-X.Y.Z.exe `
   -R atmarachchige0081/TangPrimer-FPGA-Studio-Installer
 ```
 
@@ -90,19 +90,37 @@ in the release workflow. A self-signed certificate is deliberately not used.
 Clone this repository on Windows and run:
 
 ```powershell
-.\build-installer.ps1
-.\test-installer.ps1
+.\build-installer.ps1 -Version 1.2.0
+.\test-installer.ps1 -Version 1.2.0
 ```
 
 The isolated build creates:
 
 ```text
-dist\TangPrimerFPGAStudio-Setup-1.1.0.exe
-dist\TangPrimerFPGAStudio-Setup-1.1.0.exe.sha256
+dist\TangPrimerFPGAStudio-Setup-1.2.0.exe
+dist\TangPrimerFPGAStudio-Setup-1.2.0.exe.sha256
 ```
 
 The full FPGA IDE source, HDL examples, documentation, and issue tracker are in
 the [main repository](https://github.com/atmarachchige0081/Tang-Primer-20K-FPGA-Studio).
+
+## Automatic release synchronization
+
+This repository no longer requires someone to copy each Studio release by
+hand. Its public GitHub Actions pipeline accepts an immediate release dispatch
+and also checks the main repository's latest release hourly. For every new
+semantic version it:
+
+1. fetches the immutable upstream tag;
+2. synchronizes only approved IDE, workspace, project, documentation, and
+   screenshot paths;
+3. commits and tags that exact installer source;
+4. builds on a clean Windows VM and tests packaged dark/light startup;
+5. publishes the one-file EXE, checksum, and signed build provenance.
+
+The hourly path needs no cross-repository secret. Maintainers may configure a
+fine-grained `INSTALLER_REPO_TOKEN` in the main repository for immediate
+dispatch; it should be restricted to this installer repository.
 
 ## Uninstalling
 

@@ -1,5 +1,7 @@
 [CmdletBinding()]
 param(
+    [ValidatePattern('^\d+\.\d+\.\d+$')]
+    [string] $Version = '1.2.0',
     [switch] $SkipPythonInstall,
     [switch] $SkipInnoInstall
 )
@@ -14,6 +16,7 @@ $pyInstaller = Join-Path $venv 'Scripts\pyinstaller.exe'
 $appDist = Join-Path $root 'build\app-dist'
 $pyWork = Join-Path $root 'build\pyinstaller'
 $specDir = Join-Path $root 'build\spec'
+$installerName = "TangPrimerFPGAStudio-Setup-$Version.exe"
 
 function Assert-InBuildRoot {
     param([Parameter(Mandatory)] [string] $Path)
@@ -44,7 +47,7 @@ if (-not $SkipPythonInstall) {
     if ($LASTEXITCODE -ne 0) { throw "pip failed with exit code $LASTEXITCODE" }
 }
 
-& $venvPython (Join-Path $root 'generate_assets.py')
+& $venvPython (Join-Path $root 'generate_assets.py') --version $Version
 if ($LASTEXITCODE -ne 0) { throw "Icon generation failed with exit code $LASTEXITCODE" }
 
 Clear-BuildDirectory $appDist
@@ -98,10 +101,10 @@ if (-not $isccCandidates) {
 
 $iscc = @($isccCandidates)[0]
 Write-Host 'Compiling the single-file Windows installer...'
-& $iscc '/Q' (Join-Path $root 'installer\TangPrimerFPGAStudio.iss')
+& $iscc '/Q' "/DMyAppVersion=$Version" (Join-Path $root 'installer\TangPrimerFPGAStudio.iss')
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
 
-$installer = Join-Path $root 'dist\TangPrimerFPGAStudio-Setup-1.1.0.exe'
+$installer = Join-Path $root "dist\$installerName"
 if (-not (Test-Path -LiteralPath $installer)) {
     throw "Expected installer was not created: $installer"
 }

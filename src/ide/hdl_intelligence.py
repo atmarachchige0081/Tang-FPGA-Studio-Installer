@@ -2,7 +2,8 @@
 
 This is deliberately not a complete language server.  It provides the high
 value beginner features needed by the local FPGA IDE: module/port/instance
-outlines, go-to-module data, completion words, and actionable project checks.
+outlines, symbol navigation, references, completion words, instance generation,
+and actionable project checks.
 """
 
 from __future__ import annotations
@@ -69,6 +70,15 @@ class Diagnostic:
     suggestion: str = ""
 
 
+@dataclass(frozen=True)
+class SymbolLocation:
+    path: Path
+    line: int
+    column: int
+    preview: str
+    kind: str = "reference"
+
+
 @dataclass
 class ProjectIndex:
     project_root: Path
@@ -87,11 +97,60 @@ class ProjectIndex:
             words.update(signal.name for signal in module.signals)
         return sorted(words, key=str.lower)
 
-    def definition(self, word: str) -> tuple[Path, int] | None:
+    def definition(self, word: str, current_path: Path | None = None) -> tuple[Path, int] | None:
         module = self.modules.get(word)
         if module:
             return module.path, module.line
+        search_modules = list(self.modules.values())
+        if current_path is not None:
+            resolved = current_path.resolve()
+            search_modules.sort(key=lambda item: item.path.resolve() != resolved)
+        for symbol_module in search_modules:
+            for port in symbol_module.ports:
+                if port.name == word:
+                    return symbol_module.path, port.line
+            for signal in symbol_module.signals:
+                if signal.name == word:
+                    return symbol_module.path, signal.line
+            for instance in symbol_module.instances:
+                if instance.name == word:
+                    return symbol_module.path, instance.line
         return None
+
+    def references(self, word: str) -> list[SymbolLocation]:
+        """Find exact project-local identifier references with useful previews."""
+        if not re.fullmatch(r"[A-Za-z_]\w*", word):
+            return []
+        pattern = re.compile(rf"\b{re.escape(word)}\b")
+        locations: list[SymbolLocation] = []
+        for path in self.hdl_files:
+            text = _read_text(path)
+            clean = _strip_comments(text)
+            lines = text.splitlines()
+            for match in pattern.finditer(clean):
+                line = _line_number(clean, match.start())
+                line_start = clean.rfind("\n", 0, match.start()) + 1
+                column = match.start() - line_start + 1
+                preview = lines[line - 1].strip() if 0 < line <= len(lines) else word
+                kind = "definition" if self.definition(word, path) == (path, line) else "reference"
+                locations.append(SymbolLocation(path, line, column, preview, kind))
+        return locations
+
+    def module_instantiation(self, module_name: str, instance_name: str | None = None) -> str:
+        """Generate a readable named-port module instance from indexed ports."""
+        module = self.modules.get(module_name)
+        if module is None:
+            raise KeyError(f"Unknown project module: {module_name}")
+        name = instance_name or f"u_{module_name}"
+        if not re.fullmatch(r"[A-Za-z_]\w*", name):
+            raise ValueError(f"Invalid HDL instance name: {name}")
+        if not module.ports:
+            return f"{module_name} {name} ();"
+        width = max(len(port.name) for port in module.ports)
+        connections = ",\n".join(
+            f"    .{port.name:<{width}} ({port.name})" for port in module.ports
+        )
+        return f"{module_name} {name} (\n{connections}\n);"
 
 
 MODULE_RE = re.compile(r"(?m)^\s*module\s+([A-Za-z_]\w*)\b")
@@ -171,10 +230,14 @@ def _parse_modules(path: Path, text: str) -> list[ModuleSymbol]:
         end_match = ENDMODULE_RE.search(clean, match.end())
         end_offset = end_match.end() if end_match else len(clean)
         region = clean[match.start():end_offset]
+        # Ports belong to the module header only. Scanning the entire module
+        # incorrectly treats function/task inputs as physical top-level pins.
+        header_end = region.find(");")
+        header_region = region[:header_end + 2] if header_end >= 0 else region
         module_line = _line_number(clean, match.start())
         ports: list[PortSymbol] = []
         seen_ports: set[str] = set()
-        for port_match in PORT_RE.finditer(region):
+        for port_match in PORT_RE.finditer(header_region):
             for name in re.split(r"\s*,\s*", port_match.group("names")):
                 if name and name not in seen_ports:
                     seen_ports.add(name)

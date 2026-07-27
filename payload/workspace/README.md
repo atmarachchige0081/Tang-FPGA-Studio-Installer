@@ -3,7 +3,7 @@
 [![Quality gates](https://github.com/atmarachchige0081/Tang-Primer-20K-FPGA-Studio/actions/workflows/quality-gates.yml/badge.svg)](https://github.com/atmarachchige0081/Tang-Primer-20K-FPGA-Studio/actions/workflows/quality-gates.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-6c63ff.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-4f9cff.svg)](https://www.python.org/)
-[![Release: v1.1.0](https://img.shields.io/badge/release-v1.1.0-42d392.svg)](CHANGELOG.md)
+[![Release: v1.2.0](https://img.shields.io/badge/release-v1.2.0-42d392.svg)](CHANGELOG.md)
 
 An open-source, beginner-friendly FPGA IDE and development environment for the
 Sipeed Tang Primer 20K (`GW2A-LV18PG256C8/I7`). Simulate, inspect waveforms,
@@ -14,6 +14,16 @@ pin map and programmer.
 **Installing for the first time?** Follow [INSTALL.md](INSTALL.md) from a clean
 Windows computer through dependencies, simulation, JTAG setup, build, and your
 first LED program on real hardware.
+
+> **Easiest Windows setup:** download the
+> [one-file Tang Primer FPGA Studio installer](https://github.com/atmarachchige0081/TangPrimer-FPGA-Studio-Installer/releases/latest),
+> keep the recommended FPGA-toolchain task selected, and launch the Studio from
+> its new Desktop icon. The separate
+> [installer repository](https://github.com/atmarachchige0081/TangPrimer-FPGA-Studio-Installer)
+> publishes SHA-256 checksums, public GitHub/Sigstore build provenance, and
+> beginner installation instructions. Releases are provenance-attested but do
+> not yet have a trusted Windows Authenticode publisher certificate, so
+> Windows may display **Unknown publisher**.
 
 The pinned [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build) provides Yosys synthesis, nextpnr-himbaechel placement/routing, Project Apicula bitstream packing, openFPGALoader programming, Verilator linting, Icarus simulation, GTKWave, and formal tools. It is installed at `C:\fpga-tools\2026-07-26\oss-cad-suite` so the tool path contains no spaces, as recommended by YosysHQ. The project path may contain spaces because all build commands run with relative paths.
 
@@ -31,17 +41,19 @@ Windows users can alternatively double-click `Open-FPGA-IDE.cmd`.
 |---|---|
 | ![Tang Primer FPGA Studio dark workspace](docs/images/studio-main.png) | ![Tang Primer FPGA Studio light workspace](docs/images/studio-main-light.png) |
 
-The release workspace includes custom iconography, searchable project
-navigation, open-file tabs, signal/module intelligence, contextual HDL
-explanations, project-wide search, a command palette, a searchable library of
-72 reviewed HDL patterns, safe quick fixes, a pin assignment inspector, and a
-design-health dashboard.
+The v1.2 workspace uses calmer, more natural dark and light palettes, clearer
+human language, consistent spacing, and focused guided workflows. It includes
+custom iconography, searchable navigation, open-file tabs, symbol definitions
+and references, named-port instance generation, contextual HDL explanations,
+project-wide search, a command palette, 72 reviewed HDL patterns, safe quick
+fixes, a pin assignment inspector, and a design-health dashboard.
 The dashboard turns build reports into timing, utilization, hierarchy,
 artifact, and verification-readiness insights. Live console actions cover
 simulation, GTKWave, lint, debug, build, SRAM upload, persistent flash, JTAG
-detection, hardware diagnosis, UART monitoring, tool setup, and driver setup.
+detection, hardware diagnosis, an integrated read/write UART terminal, tool
+setup, and driver setup.
 
-Version 1.1.0 can switch the complete live workspace between dark and light
+Version 1.2.0 can switch the complete live workspace between dark and light
 modes from the header, **View** menu, or `Ctrl+Alt+T`. The choice is remembered
 locally. Editors, dialogs, menus, selections, syntax colors, status states,
 tooltips, and all custom icons change together without closing files or losing
@@ -49,6 +61,44 @@ work. Both palettes are checked for WCAG contrast, and a release stress test
 switches themes repeatedly with dialogs open and verifies automatic rollback
 after an injected UI failure. To force a startup theme, run
 `./FPGA-IDE.ps1 -Theme light` or `./FPGA-IDE.ps1 -Theme dark`.
+
+### A useful first launch
+
+![Version 1.2.0 first-launch release notes](docs/images/studio-release-notes.png)
+
+The first launch of each Studio version opens a concise, visual **What's new**
+screen instead of dropping a beginner straight into source code. It appears
+only once per version, stores that acknowledgement in local settings, and can
+always be reopened from **Help → What's new** or the command palette.
+
+### Guided v1.2 workflows
+
+| Select a testbench and waveform layout | Auto-detected read/write UART terminal |
+|---|---|
+| ![Verification Center](docs/images/studio-verification-center.png) | ![Integrated UART terminal](docs/images/studio-uart-terminal.png) |
+
+| Hardware setup without driver guesswork | Interactive first-project tutorial |
+|---|---|
+| ![Guided hardware setup](docs/images/studio-hardware-setup.png) | ![First-project tutorial](docs/images/studio-first-project-tutorial.png) |
+
+The New Project Wizard creates a complete, immediately verifiable project from
+the board-I/O or UART starting point. The Verification Center selects one
+testbench and GTKWave layout and summarizes visible PASS/FAIL assertion lines.
+Tool errors that include a source location are clickable in the console. The
+hardware guide clearly separates JTAG Interface 0 from UART Interface 1, while
+the UART terminal auto-detects COM ports and supports ASCII/hex display,
+timestamps, transmit history, line endings, and log saving.
+
+### Synthesized netlist viewer
+
+![Searchable synthesized netlist viewer](docs/images/studio-netlist-viewer.png)
+
+Press **Netlist** after a successful Build to inspect the actual Yosys
+implementation in a separate popup. The viewer provides a categorized overview,
+a searchable table of every synthesized component, type filtering, zoom and
+pan controls, one-hop fan-in/fan-out views, named-net labels, and double-click
+navigation back to RTL source locations. Large designs are summarized first so
+the diagram stays useful instead of becoming an unreadable wall of wires.
 
 ### Intelligent workspace
 
@@ -80,6 +130,13 @@ For release validation, operations, security reporting, and contributions, see
 [Contributing](CONTRIBUTING.md), and the [Changelog](CHANGELOG.md). The project
 is available under the [MIT License](LICENSE).
 
+The main and installer repositories are connected by a public release pipeline.
+When a Studio release is published, the installer workflow synchronizes only
+approved IDE/workspace paths from the immutable tag, builds on a clean Windows
+runner, tests both themes, publishes a SHA-256 checksum, and creates a signed
+GitHub build-provenance attestation. An hourly token-free poll provides a safe
+fallback if the optional immediate cross-repository dispatch is not configured.
+
 ## Daily commands
 
 Run these in PowerShell from this folder:
@@ -95,7 +152,7 @@ Run these in PowerShell from this folder:
 .\fpga.ps1 doctor                # tools, USB programmer, and COM-port checks
 .\fpga.ps1 driver                # configure WinUSB for Dock JTAG interface A
 .\fpga.ps1 detect                # scan the FPGA JTAG chain
-.\fpga.ps1 serial -Port COM5     # UART monitor, default 115200 baud
+.\fpga.ps1 serial -Port COM5     # read-only CLI UART monitor, default 115200 baud
 .\fpga.ps1 clean                 # remove generated build files
 ```
 
@@ -109,7 +166,7 @@ Use `-NoBuild` with `upload` or `flash` to reuse the existing bitstream. In VS C
 4. Run `.\fpga.ps1 doctor`, then `.\fpga.ps1 detect`.
 5. Run `.\fpga.ps1 upload`. The four Dock LEDs should blink at different rates.
 
-On Windows, openFPGALoader needs WinUSB on the Dock's JTAG half. Run `.\fpga.ps1 driver`, allow the administrator prompt, then in Zadig choose **Options > List All Devices**, select **USB Serial Converter A (Interface 0 / MI_00)**, choose **WinUSB**, and click **Replace Driver**. Do not change Converter B / MI_01: it must keep the FTDI driver so UART remains available (currently COM11 on this machine). The setup script downloads the official Zadig 2.9 binary, verifies its pinned SHA-256, and checks its Akeo Consulting Authenticode signature before it can be launched.
+On Windows, openFPGALoader needs WinUSB on the Dock's JTAG half. Run `.\fpga.ps1 driver`, allow the administrator prompt, then in Zadig choose **Options > List All Devices**, select **USB Serial Converter A (Interface 0 / MI_00)**, choose **WinUSB**, and click **Replace Driver**. Do not change Converter B / MI_01: it must keep the serial driver so UART remains available as a COM port. The setup script downloads the official Zadig 2.9 binary, verifies its pinned SHA-256, and checks its Akeo Consulting Authenticode signature before it can be launched.
 
 If the JTAG interface still does not appear, update the Dock's BL702 debugger firmware using [Sipeed's debugger update guide](https://wiki.sipeed.com/hardware/en/tang/common-doc/update_debugger.html). Firmware updating is deliberately not automated: the board must be placed into its special boot mode using the `702-BOOT` button, and choosing the wrong attached COM device is unsafe.
 
@@ -131,6 +188,7 @@ The command-line build discovers `.v` and `.sv` files under `rtl/` automatically
 | Project | Skills and result |
 |---|---|
 | [`01_button_led_pwm`](projects/01_button_led_pwm) | Synchronizers, debouncing, clock enables, counters, PWM, state/mode control, self-checking bounce simulation, and a prepared GTKWave layout. |
+| [`03_uart_terminal`](projects/03_uart_terminal) | A synthesizable 115200-baud RX/TX, 30-byte greeting, ready/valid handshake, framing checks, echo behavior, integrated terminal workflow, and complete protocol simulation. |
 | [`_template`](projects/_template) | Minimal, buildable starting point for creating additional examples with the same commands. |
 
 Each project is self-contained. For Project 01:
@@ -154,8 +212,13 @@ The same project can be selected without changing folders:
 
 ### Creating another example project
 
-Use a two-digit sequence number and a short lowercase name, such as
-`02_uart_terminal` or `03_spi_controller`. Copy the maintained template:
+Use **File > New Project** in the Studio for the guided path. Choose a verified
+starting point, enter a two-digit lowercase folder such as
+`04_spi_controller`, and optionally start the interactive tutorial. The wizard
+creates RTL, constraints, simulation, waveform layout, configuration, and
+documentation together.
+
+For command-line use, copy the maintained template:
 
 ```powershell
 Copy-Item -Recurse projects\_template projects\02_uart_terminal

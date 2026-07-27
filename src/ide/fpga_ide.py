@@ -21,7 +21,7 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
@@ -45,7 +45,26 @@ from ide.hdl_patterns import (  # noqa: E402
     PATTERNS,
     search_patterns,
 )
+from ide.netlist_graph import NetlistError, NetlistGraph, load_yosys_netlist  # noqa: E402
+from ide.netlist_viewer import open_netlist_viewer  # noqa: E402
 from ide.project_insights import load_project_insights, workflow_steps  # noqa: E402
+from ide.project_wizard import (  # noqa: E402
+    ProjectCreationError,
+    create_project,
+    discover_templates,
+)
+from ide.release_notes import (  # noqa: E402
+    mark_release_notes_seen,
+    notes_for_version,
+    release_notes_pending,
+)
+from ide.serial_backend import (  # noqa: E402
+    SerialConnection,
+    encode_terminal_input,
+    format_terminal_bytes,
+    list_serial_ports,
+    preferred_serial_port,
+)
 from ide.themes import (  # noqa: E402
     DEFAULT_THEME,
     HEX_COLOR,
@@ -55,10 +74,16 @@ from ide.themes import (  # noqa: E402
     theme_colors,
     validate_themes,
 )
+from ide.workflow_tools import (  # noqa: E402
+    ToolDiagnostic,
+    discover_verification_assets,
+    parse_tool_diagnostic,
+    summarize_verification_output,
+)
 
 
 APP_NAME = "Tang Primer FPGA Studio"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 STATE_ROOT = WORKSPACE_ROOT / ".fpga-studio"
 LOG_PATH = STATE_ROOT / "logs" / "studio.log"
 SETTINGS_PATH = STATE_ROOT / "settings.json"
@@ -307,6 +332,7 @@ class FPGAStudio:
         self.theme_var = tk.StringVar(master=root, value=self.theme_name)
         self.theme_button_text = tk.StringVar(master=root)
         self.theme_button_text.set("Light mode" if self.theme_name == "dark" else "Dark mode")
+        self.release_notes_window: tk.Toplevel | None = None
         self.menus: list[tk.Menu] = []
         self.root.report_callback_exception = self._report_callback_exception
         self.root.title(f"{APP_NAME} — {APP_VERSION}")
@@ -332,6 +358,12 @@ class FPGAStudio:
         self.session_passes: set[str] = set()
         self.command_history: list[tuple[str, int, datetime]] = []
         self.active_command = ""
+        self.active_output: list[str] = []
+        self.console_diagnostics: dict[str, ToolDiagnostic] = {}
+        self.console_diagnostic_sequence = 0
+        self.serial_windows: list[tk.Toplevel] = []
+        self.uart_history: list[str] = []
+        self.verification_summary = tk.StringVar(master=root, value="No verification run in this session yet.")
 
         self._configure_styles()
         self._build_menu()
@@ -647,6 +679,8 @@ class FPGAStudio:
         style.configure("Eyebrow.TLabel", background=COLORS["panel"], foreground=COLORS["muted_2"],
                         font=("Segoe UI Semibold", 8))
         style.configure("Muted.TLabel", foreground=COLORS["muted"])
+        style.configure("Accent.TLabel", background=COLORS["panel"], foreground=COLORS["accent_text"],
+                        font=("Segoe UI Semibold", 10))
         style.configure("Status.TLabel", background=COLORS["bg"], foreground=COLORS["muted"])
         style.configure("TButton", background=COLORS["panel_alt"], foreground=COLORS["text"],
                         padding=(9, 6), borderwidth=1)
@@ -769,6 +803,10 @@ class FPGAStudio:
                               accelerator="Ctrl+Shift+F", command=self.show_project_search)
         edit_menu.add_command(label="HDL Snippets…", image=self.icons["sparkle"], compound="left",
                               accelerator="Ctrl+Alt+S", command=self.show_snippets)
+        edit_menu.add_command(label="Find symbol references…", image=self.icons["search"], compound="left",
+                              accelerator="Shift+F12", command=self.show_symbol_references)
+        edit_menu.add_command(label="Generate module instance…", image=self.icons["code"], compound="left",
+                              command=self.generate_module_instance)
         edit_menu.add_separator()
         edit_menu.add_command(label="Toggle line comment", accelerator="Ctrl+/", command=self.toggle_line_comment)
         edit_menu.add_command(label="Duplicate line", accelerator="Ctrl+D", command=self.duplicate_line)
@@ -814,7 +852,7 @@ class FPGAStudio:
             command=lambda: self.run_fpga("flash", ["-NoBuild"]),
         )
         run_menu.add_separator()
-        run_menu.add_command(label="UART Monitor…", command=self.open_serial_monitor)
+        run_menu.add_command(label="UART Terminal…", command=self.open_serial_monitor)
         run_menu.add_command(label="Stop running command", command=self.stop_process)
         menu.add_cascade(label="Run", menu=run_menu)
 
@@ -823,8 +861,14 @@ class FPGAStudio:
         tools_menu.add_command(label="Smart project check", command=lambda: self.analyze_project(True))
         tools_menu.add_command(label="Project insights", image=self.icons["dashboard"], compound="left",
                                command=self.show_project_insights)
+        tools_menu.add_command(label="Synthesized netlist viewer…", image=self.icons["dashboard"], compound="left",
+                               command=self.show_netlist_viewer)
         tools_menu.add_command(label="Pin assignment inspector", image=self.icons["target"], compound="left",
                                command=self.show_pin_inspector)
+        tools_menu.add_command(label="Verification center…", image=self.icons["bug"], compound="left",
+                               command=self.show_verification_center)
+        tools_menu.add_command(label="Hardware setup guide…", image=self.icons["doctor"], compound="left",
+                               command=self.show_hardware_setup)
         tools_menu.add_command(label="Quick fix selected problem", image=self.icons["bulb"], compound="left",
                                command=self.apply_quick_fix)
         tools_menu.add_command(label="Refresh file tree", command=self.populate_file_tree)
@@ -836,7 +880,12 @@ class FPGAStudio:
 
         help_menu = tk.Menu(menu, tearoff=False, bg=COLORS["panel"], fg=COLORS["text"],
                             activebackground=COLORS["selection"])
-        help_menu.add_command(label="Beginner workflow", command=self.show_beginner_guide)
+        help_menu.add_command(label="What's new in 1.2.0…", image=self.icons["sparkle"], compound="left",
+                              command=self.show_release_notes)
+        help_menu.add_separator()
+        help_menu.add_command(label="Interactive first-project tutorial…", image=self.icons["bulb"], compound="left",
+                              command=self.show_first_project_tutorial)
+        help_menu.add_command(label="Project guide", command=self.show_beginner_guide)
         help_menu.add_command(label="About", command=self.show_about)
         menu.add_cascade(label="Help", menu=help_menu)
         self.menus = [menu, file_menu, edit_menu, view_menu, run_menu, tools_menu, help_menu]
@@ -855,11 +904,12 @@ class FPGAStudio:
         brand_copy = ttk.Frame(brand, style="Header.TFrame")
         brand_copy.pack(side="left")
         ttk.Label(brand_copy, text="Tang Primer Studio", style="Brand.TLabel").pack(anchor="w")
-        ttk.Label(brand_copy, text="FPGA DESIGN WORKSPACE  •  RELEASE", style="HeaderMuted.TLabel").pack(anchor="w")
+        ttk.Label(brand_copy, text="Design, verify, and program your Tang Primer 20K",
+                  style="HeaderMuted.TLabel").pack(anchor="w")
 
         project_area = ttk.Frame(top, style="Header.TFrame")
         project_area.grid(row=0, column=1, sticky="w", padx=(36, 20))
-        ttk.Label(project_area, text="ACTIVE PROJECT", style="HeaderMuted.TLabel").pack(anchor="w", pady=(0, 3))
+        ttk.Label(project_area, text="Project", style="HeaderMuted.TLabel").pack(anchor="w", pady=(0, 3))
         self.project_var = tk.StringVar()
         self.project_combo = ttk.Combobox(project_area, textvariable=self.project_var, state="readonly", width=29)
         self.project_combo.pack(fill="x")
@@ -877,14 +927,27 @@ class FPGAStudio:
         toolbar.pack(fill="x")
         design_row = ttk.Frame(toolbar, style="Header.TFrame")
         design_row.pack(fill="x")
-        ttk.Label(design_row, text="CREATE", style="HeaderMuted.TLabel").pack(side="left", padx=(0, 5))
+        # Reserve the right-side utilities before packing the longer action
+        # groups so they remain fully visible on supported laptop widths.
+        self._action_button(
+            design_row, "Commands", "command", self.show_command_palette,
+            tooltip="Search every IDE action (Ctrl+Shift+P)",
+        ).pack(side="right", padx=2)
+        self._action_button(
+            design_row, "", "search", self.show_project_search, "Toolbar.TButton",
+            "Search this project (Ctrl+Shift+F)", width=2,
+        ).pack(side="right", padx=2)
+        self._action_button(
+            design_row, "", "save", self.save_file, "Toolbar.TButton", "Save current file (Ctrl+S)", width=2,
+        ).pack(side="right", padx=2)
+        ttk.Label(design_row, text="Create", style="HeaderMuted.TLabel").pack(side="left", padx=(0, 5))
         create_group = ttk.Frame(design_row, style="Header.TFrame")
         create_group.pack(side="left")
         self._action_button(create_group, "Project", "plus", self.new_project, tooltip="Create from the verified template").pack(side="left", padx=2)
         self._action_button(create_group, "Module", "code", self.new_module, tooltip="Create a SystemVerilog module").pack(side="left", padx=2)
         self._action_button(create_group, "Snippets", "sparkle", self.show_snippets, tooltip="Insert a safe HDL pattern").pack(side="left", padx=2)
         ttk.Separator(design_row, orient="vertical").pack(side="left", fill="y", padx=9)
-        ttk.Label(design_row, text="VERIFY", style="HeaderMuted.TLabel").pack(side="left", padx=(0, 5))
+        ttk.Label(design_row, text="Verify", style="HeaderMuted.TLabel").pack(side="left", padx=(0, 5))
 
         verify_actions = (
             ("Simulate", "sim", "play", "Run the self-checking testbench (F5)"),
@@ -906,26 +969,10 @@ class FPGAStudio:
             )
             button.pack(side="left", padx=2)
             self.runner_buttons.append(button)
-        ttk.Separator(design_row, orient="vertical").pack(side="left", fill="y", padx=9)
-        self._action_button(
-            design_row, "Analyze", "sparkle", lambda: self.analyze_project(True),
-            tooltip="Refresh intelligent project diagnostics",
-        ).pack(side="left", padx=2)
-        self._action_button(
-            design_row, "Commands", "command", self.show_command_palette,
-            tooltip="Search every IDE action (Ctrl+Shift+P)",
-        ).pack(side="right", padx=2)
-        self._action_button(
-            design_row, "", "search", self.show_project_search, "Toolbar.TButton",
-            "Search this project (Ctrl+Shift+F)", width=2,
-        ).pack(side="right", padx=2)
-        self._action_button(
-            design_row, "", "save", self.save_file, "Toolbar.TButton", "Save current file (Ctrl+S)", width=2,
-        ).pack(side="right", padx=2)
 
         hardware_row = ttk.Frame(toolbar, style="Header.TFrame")
         hardware_row.pack(fill="x", pady=(3, 0))
-        ttk.Label(hardware_row, text="IMPLEMENT", style="HeaderMuted.TLabel").pack(side="left", padx=(0, 5))
+        ttk.Label(hardware_row, text="Hardware", style="HeaderMuted.TLabel").pack(side="left", padx=(0, 5))
         for label, command, icon, tip in hardware_actions:
             button = self._action_button(
                 hardware_row, label, icon, lambda value=command: self.run_fpga(value), tooltip=tip,
@@ -933,9 +980,22 @@ class FPGAStudio:
             button.pack(side="left", padx=2)
             self.runner_buttons.append(button)
         self._action_button(
-            hardware_row, "UART", "terminal", self.open_serial_monitor,
-            tooltip="Open the board serial monitor",
+            hardware_row, "UART terminal", "terminal", self.open_serial_monitor,
+            tooltip="Connect, send, receive, inspect, and save UART data",
         ).pack(side="left", padx=(8, 2))
+        self._action_button(
+            hardware_row, "Setup guide", "doctor", self.show_hardware_setup,
+            tooltip="Check the board, JTAG driver, UART port, and DIP switches",
+        ).pack(side="left", padx=2)
+        ttk.Separator(hardware_row, orient="vertical").pack(side="left", fill="y", padx=9)
+        self._action_button(
+            hardware_row, "Analyze", "sparkle", lambda: self.analyze_project(True),
+            tooltip="Refresh intelligent project diagnostics",
+        ).pack(side="left", padx=2)
+        self._action_button(
+            hardware_row, "Netlist", "dashboard", self.show_netlist_viewer,
+            tooltip="Explore synthesized components and local connectivity",
+        ).pack(side="left", padx=2)
         self.stop_button = self._action_button(
             hardware_row, "Stop", "stop", self.stop_process, "Danger.TButton", "Stop the running command tree",
         )
@@ -976,7 +1036,7 @@ class FPGAStudio:
         header.pack(fill="x")
         copy = ttk.Frame(header)
         copy.pack(side="left")
-        ttk.Label(copy, text="EXPLORER", style="Eyebrow.TLabel").pack(anchor="w")
+        ttk.Label(copy, text="Explorer", style="Eyebrow.TLabel").pack(anchor="w")
         ttk.Label(copy, text="Project files", font=("Segoe UI Semibold", 11)).pack(anchor="w")
         refresh = self._action_button(header, "", "refresh", self.populate_file_tree, "Ghost.TButton",
                                       "Refresh project files", width=2)
@@ -1032,7 +1092,7 @@ class FPGAStudio:
         self._action_button(
             editor_header, "", "search", self.show_project_search, "Ghost.TButton", "Search this project", width=2,
         ).pack(side="right", padx=2)
-        ttk.Label(editor_header, text="CTRL+SPACE  COMPLETE   •   F12  DEFINITION",
+        ttk.Label(editor_header, text="Ctrl+Space Complete   •   F12 Definition   •   Shift+F12 References",
                   style="Eyebrow.TLabel").pack(side="right", padx=8)
 
         code_frame = tk.Frame(editor_card, bg=COLORS["editor"], highlightthickness=1,
@@ -1064,7 +1124,7 @@ class FPGAStudio:
 
         console_header = ttk.Frame(console_card, padding=(9, 6))
         console_header.pack(fill="x")
-        ttk.Label(console_header, image=self.icons["terminal"], text="  COMMAND CONSOLE",
+        ttk.Label(console_header, image=self.icons["terminal"], text="  Command console",
                   compound="left", font=("Segoe UI Semibold", 10)).pack(side="left")
         self.console_meta = tk.StringVar(value="Ready for a command")
         ttk.Label(console_header, textvariable=self.console_meta, style="Muted.TLabel").pack(side="left", padx=14)
@@ -1092,10 +1152,10 @@ class FPGAStudio:
         problems_frame = ttk.Frame(notebook, padding=5)
         coach_frame = ttk.Frame(notebook, padding=5)
         insights_frame = ttk.Frame(notebook, padding=5)
-        notebook.add(outline_frame, text="Code", image=self.icons["code"], compound="left")
-        notebook.add(problems_frame, text="Bugs", image=self.icons["lint"], compound="left")
-        notebook.add(coach_frame, text="Help", image=self.icons["bulb"], compound="left")
-        notebook.add(insights_frame, text="Stats", image=self.icons["dashboard"], compound="left")
+        notebook.add(outline_frame, text="Outline", image=self.icons["code"], compound="left")
+        notebook.add(problems_frame, text="Problems", image=self.icons["lint"], compound="left")
+        notebook.add(coach_frame, text="Guide", image=self.icons["bulb"], compound="left")
+        notebook.add(insights_frame, text="Insights", image=self.icons["dashboard"], compound="left")
         self.intelligence_notebook = notebook
 
         self.outline_tree = ttk.Treeview(outline_frame, show="tree")
@@ -1190,6 +1250,7 @@ class FPGAStudio:
         self.root.bind_all("<Control-Shift-E>", lambda _event: self.explain_current_code())
         self.editor.bind("<Control-space>", self.show_completion)
         self.editor.bind("<F12>", self.go_to_definition)
+        self.editor.bind("<Shift-F12>", self.show_symbol_references)
         self.editor.bind("<Control-Button-1>", self.go_to_definition)
         self.editor.bind("<Tab>", self.insert_spaces)
         self.editor.bind("<Shift-Tab>", self.unindent_selection)
@@ -1557,7 +1618,16 @@ class FPGAStudio:
         before = self.editor.get("insert linestart", "insert")
         match = re.search(r"([A-Za-z_]\w*)$", before)
         prefix = match.group(1) if match else ""
-        candidates = matching_completions(self.current_index, prefix)
+        if re.search(r"\.\s*[A-Za-z_]*$", before):
+            port_words = {
+                port.name for module in self.current_index.modules.values() for port in module.ports
+            }
+            candidates = sorted(
+                (word for word in port_words if word.lower().startswith(prefix.lower()) and word != prefix),
+                key=str.lower,
+            )
+        else:
+            candidates = matching_completions(self.current_index, prefix)
         snippet_aliases = [name for name in HDL_SNIPPET_ALIASES if name.startswith(prefix.lower()) and name != prefix]
         if not candidates and not snippet_aliases:
             self.root.bell()
@@ -1590,13 +1660,145 @@ class FPGAStudio:
 
     def go_to_definition(self, _event=None):
         word = self.editor.get("insert wordstart", "insert wordend").strip()
-        definition = self.current_index.definition(word)
+        definition = self.current_index.definition(word, self.current_file)
         if definition:
             self.open_file(*definition)
         else:
-            self.status_text.set(f"No project module definition found for '{word}'.")
+            self.status_text.set(f"No project symbol definition found for '{word}'.")
             self.root.bell()
         return "break"
+
+    def show_symbol_references(self, _event=None):
+        word = self.editor.get("insert wordstart", "insert wordend").strip()
+        if not re.fullmatch(r"[A-Za-z_]\w*", word):
+            word = simpledialog.askstring("Find references", "HDL symbol:", parent=self.root) or ""
+            word = word.strip()
+        if not word:
+            return "break" if _event is not None else None
+        references = self.current_index.references(word)
+        dialog = tk.Toplevel(self.root)
+        dialog.title(f"References — {word}")
+        dialog.geometry("900x520")
+        dialog.minsize(680, 360)
+        dialog.configure(bg=COLORS["bg"])
+        dialog.transient(self.root)
+
+        header = ttk.Frame(dialog, style="Top.TFrame", padding=(18, 16, 18, 10))
+        header.pack(fill="x")
+        ttk.Label(header, text=f"{len(references)} reference{'s' if len(references) != 1 else ''} to {word}",
+                  style="Title.TLabel").pack(anchor="w")
+        ttk.Label(
+            header,
+            text="Definitions and exact identifier uses in synthesizable project HDL. Double-click to open.",
+            style="Status.TLabel",
+        ).pack(anchor="w", pady=(3, 0))
+
+        body = ttk.Frame(dialog, padding=(14, 6, 14, 14))
+        body.pack(fill="both", expand=True)
+        tree = ttk.Treeview(body, columns=("kind", "file", "line", "preview"), show="headings")
+        for column, title, width in (
+            ("kind", "Kind", 85), ("file", "File", 180),
+            ("line", "Line", 55), ("preview", "Source", 480),
+        ):
+            tree.heading(column, text=title)
+            tree.column(column, width=width, stretch=column in {"file", "preview"})
+        locations: dict[str, object] = {}
+        for location in references:
+            try:
+                relative = location.path.relative_to(self.current_project).as_posix()
+            except ValueError:
+                relative = str(location.path)
+            item = tree.insert("", "end", values=(location.kind.title(), relative, location.line, location.preview))
+            locations[item] = location
+        scrollbar = ttk.Scrollbar(body, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        def open_selected(_event=None) -> None:
+            selected = tree.selection()
+            location = locations.get(selected[0]) if selected else None
+            if location:
+                self.open_file(location.path, location.line)
+                dialog.destroy()
+
+        tree.bind("<Double-1>", open_selected)
+        tree.bind("<Return>", open_selected)
+        if references:
+            first = tree.get_children()[0]
+            tree.selection_set(first)
+            tree.focus(first)
+        else:
+            self.status_text.set(f"No references found for '{word}'.")
+        return "break" if _event is not None else None
+
+    def generate_module_instance(self) -> None:
+        modules = sorted(self.current_index.modules, key=str.lower)
+        if not modules:
+            messagebox.showinfo("No modules indexed", "Add or save an HDL module, then run Analyze.")
+            return
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Generate module instance")
+        dialog.geometry("700x520")
+        dialog.minsize(580, 420)
+        dialog.configure(bg=COLORS["bg"])
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        header = ttk.Frame(dialog, style="Top.TFrame", padding=(18, 16, 18, 10))
+        header.pack(fill="x")
+        ttk.Label(header, text="Generate a named-port instance", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(header, text="Ports come from the live HDL index; edit signal names after insertion.",
+                  style="Status.TLabel").pack(anchor="w", pady=(3, 0))
+        form = ttk.Frame(dialog, padding=(18, 10))
+        form.pack(fill="x")
+        ttk.Label(form, text="Module").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=4)
+        module_var = tk.StringVar(value=modules[0])
+        module_combo = ttk.Combobox(form, textvariable=module_var, values=modules, state="readonly", width=28)
+        module_combo.grid(row=0, column=1, sticky="ew", pady=4)
+        ttk.Label(form, text="Instance name").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=4)
+        instance_var = tk.StringVar(value=f"u_{modules[0]}")
+        instance_entry = ttk.Entry(form, textvariable=instance_var)
+        instance_entry.grid(row=1, column=1, sticky="ew", pady=4)
+        form.columnconfigure(1, weight=1)
+        preview = tk.Text(
+            dialog, height=14, wrap="none", bg=COLORS["editor"], fg=COLORS["text"],
+            insertbackground=COLORS["cursor"], selectbackground=COLORS["selection"],
+            relief="flat", padx=12, pady=10, font=("Cascadia Code", 10), state="disabled",
+        )
+        preview.pack(fill="both", expand=True, padx=18, pady=(4, 10))
+
+        def refresh(*_args) -> None:
+            if module_var.get() and not instance_var.get().strip():
+                instance_var.set(f"u_{module_var.get()}")
+                return
+            try:
+                value = self.current_index.module_instantiation(module_var.get(), instance_var.get().strip())
+            except (KeyError, ValueError) as error:
+                value = f"// {error}"
+            preview.configure(state="normal")
+            preview.delete("1.0", "end")
+            preview.insert("1.0", value)
+            preview.configure(state="disabled")
+
+        module_var.trace_add("write", refresh)
+        instance_var.trace_add("write", refresh)
+        refresh()
+        actions = ttk.Frame(dialog, padding=(18, 0, 18, 16))
+        actions.pack(fill="x")
+
+        def insert() -> None:
+            try:
+                value = self.current_index.module_instantiation(module_var.get(), instance_var.get().strip())
+            except (KeyError, ValueError) as error:
+                messagebox.showerror("Cannot generate instance", str(error), parent=dialog)
+                return
+            self.editor.insert("insert", value + "\n")
+            dialog.destroy()
+            self.editor.focus_set()
+
+        ttk.Button(actions, text="Cancel", command=dialog.destroy).pack(side="right")
+        self._action_button(actions, "Insert into editor", "plus", insert, "Accent.TButton").pack(side="right", padx=8)
 
     def analyze_project(self, report_to_console: bool = False) -> None:
         self.current_index = scan_project(self.current_project)
@@ -1843,7 +2045,9 @@ class FPGAStudio:
                           "3. Simulate and inspect GTKWave.\n4. Lint and build.\n"
                           "5. Upload to SRAM.\n6. Flash only after hardware behavior is correct.\n\n")
         self.coach.insert("end", "Editor intelligence\n", "heading")
-        self.coach.insert("end", "• Ctrl+Space: project + signal completion\n• F12 / Ctrl+Click: go to module definition\n"
+        self.coach.insert("end", "• Ctrl+Space: project, port, and signal completion\n• F12 / Ctrl+Click: go to symbol definition\n"
+                          "• Shift+F12: find exact project references\n"
+                          "• Generate module instance: create named port wiring\n"
                           "• Double-click Outline/Problems entries to navigate\n"
                           "• Smart check validates hierarchy, pins, testbench, and RTL hazards\n"
                           "• Ctrl+Shift+P: searchable command palette\n"
@@ -1873,19 +2077,26 @@ class FPGAStudio:
             ("Hardware: Flash persistent", "Write configuration flash after verification", "", lambda: self.run_fpga("flash")),
             ("Hardware: Detect JTAG", "Scan the attached FPGA chain", "", lambda: self.run_fpga("detect")),
             ("Hardware: Doctor", "Inspect tools, USB interfaces and UART", "", lambda: self.run_fpga("doctor")),
-            ("Create: New project", "Copy the verified project template", "", self.new_project),
+            ("Hardware: Guided setup", "JTAG, UART, driver, cable, and switch guidance", "", self.show_hardware_setup),
+            ("Create: New project", "Choose a complete verified starting point", "", self.new_project),
             ("Create: New HDL module", "Generate a safe SystemVerilog skeleton", "", self.new_module),
             ("Code: Insert HDL snippet", "Use a reviewed sequential/combinational pattern", "Ctrl+Alt+S", self.show_snippets),
             ("Code: Explain selection", "Explain the current HDL construct and safer usage", "Ctrl+Shift+E", self.explain_current_code),
             ("Code: Search project", "Find text across sources, constraints and docs", "Ctrl+Shift+F", self.show_project_search),
+            ("Code: Find references", "Find exact identifier uses across project HDL", "Shift+F12", self.show_symbol_references),
+            ("Code: Generate instance", "Create named port connections from an indexed module", "", self.generate_module_instance),
             ("View: Toggle dark/light mode", "Switch the complete live workspace theme", "Ctrl+Alt+T", self.toggle_theme),
             ("Intelligence: Smart check", "Refresh actionable design diagnostics", "", lambda: self.analyze_project(True)),
             ("Intelligence: Project insights", "Review health, timing, utilization and readiness", "", self.show_project_insights),
+            ("Intelligence: View synthesized netlist", "Search cells and inspect local connectivity", "", self.show_netlist_viewer),
             ("Intelligence: Inspect pin map", "Review signal, package pin, voltage standard and source line", "", self.show_pin_inspector),
             ("Intelligence: Apply quick fix", "Apply a safe fix to the selected problem", "", self.apply_quick_fix),
-            ("Tools: UART monitor", "Open a board serial console", "", self.open_serial_monitor),
+            ("Tools: Verification center", "Select a testbench, assertions, and waveform layout", "", self.show_verification_center),
+            ("Tools: UART terminal", "Auto-detect COM ports, send/receive, inspect hex, and save logs", "", self.open_serial_monitor),
             ("Tools: Open project folder", "Reveal the selected project in Explorer", "", self.open_project_folder),
-            ("Help: Beginner workflow", "Open the project guide and coach", "", self.show_beginner_guide),
+            ("Help: What's new in 1.2.0", "Reopen this version's release highlights", "", self.show_release_notes),
+            ("Help: First-project tutorial", "Follow the complete verified workflow step by step", "", self.show_first_project_tutorial),
+            ("Help: Project guide", "Open the project guide and coach", "", self.show_beginner_guide),
         ]
 
     def show_command_palette(self) -> None:
@@ -2293,6 +2504,32 @@ class FPGAStudio:
         output.configure(state="disabled")
         window.bind("<Escape>", lambda _event: window.destroy())
 
+    def show_netlist_viewer(self) -> None:
+        artifact = self.current_project / "build" / "top.json"
+        if not artifact.is_file():
+            if messagebox.askyesno(
+                "Build required",
+                "The netlist viewer uses the synthesized Yosys artifact build/top.json.\n\n"
+                "Run Build now? Open the viewer again after the build completes.",
+                parent=self.root,
+            ):
+                self.run_fpga("build")
+            return
+        try:
+            graph = load_yosys_netlist(
+                artifact, self.current_project, self.current_index.top_name,
+            )
+        except NetlistError as error:
+            messagebox.showerror("Netlist viewer", str(error), parent=self.root)
+            return
+        open_netlist_viewer(
+            self.root, graph, COLORS, self.icons,
+            lambda path, line: self.open_file(path, line),
+        )
+        self.status_text.set(
+            f"Netlist: {len(graph.cells):,} cells and {len(graph.connections):,} connections"
+        )
+
     def show_pin_inspector(self) -> None:
         config = self.current_project / "fpga.config.psd1"
         config_text = config.read_text(encoding="utf-8", errors="replace") if config.exists() else ""
@@ -2443,30 +2680,109 @@ endmodule
 
     # ------------------------------------------------------------- project help
     def new_project(self) -> None:
-        name = simpledialog.askstring(
-            "New FPGA project", "Folder name (example: 02_uart_terminal):", parent=self.root,
+        templates = discover_templates(WORKSPACE_ROOT)
+        if not templates:
+            messagebox.showerror("No project templates", "No complete project template is available in projects/.")
+            return
+        projects_root = WORKSPACE_ROOT / "projects"
+        existing_numbers = [
+            int(match.group(1))
+            for path in projects_root.iterdir() if path.is_dir()
+            if (match := re.match(r"(\d{2})_", path.name))
+        ]
+        next_number = min(99, max(existing_numbers, default=0) + 1)
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("New FPGA project")
+        dialog.geometry("860x620")
+        dialog.minsize(720, 520)
+        dialog.configure(bg=COLORS["bg"])
+        dialog.transient(self.root)
+        dialog.grab_set()
+        header = ttk.Frame(dialog, style="Top.TFrame", padding=(22, 18, 22, 12))
+        header.pack(fill="x")
+        ttk.Label(header, text="Create a project you can verify immediately", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(
+            header,
+            text="Choose a tested starting point. The wizard creates RTL, constraints, a self-checking testbench, and waves.",
+            style="Status.TLabel",
+        ).pack(anchor="w", pady=(4, 0))
+
+        body = ttk.Frame(dialog, padding=(22, 8, 22, 12))
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="1  Choose a starting point", font=("Segoe UI Semibold", 11)).pack(anchor="w", pady=(0, 7))
+        tree = ttk.Treeview(body, columns=("level", "description"), show="tree headings", height=5)
+        tree.heading("#0", text="Template")
+        tree.heading("level", text="Level")
+        tree.heading("description", text="What you get")
+        tree.column("#0", width=170, stretch=False)
+        tree.column("level", width=95, stretch=False)
+        tree.column("description", width=470, stretch=True)
+        template_items: dict[str, object] = {}
+        for template in templates:
+            item = tree.insert("", "end", text=template.title, values=(template.level, template.description))
+            template_items[item] = template
+        tree.pack(fill="x")
+        first = tree.get_children()[0]
+        tree.selection_set(first)
+        tree.focus(first)
+
+        ttk.Separator(body).pack(fill="x", pady=15)
+        ttk.Label(body, text="2  Name the project", font=("Segoe UI Semibold", 11)).pack(anchor="w", pady=(0, 7))
+        form = ttk.Frame(body)
+        form.pack(fill="x")
+        ttk.Label(form, text="Folder").grid(row=0, column=0, sticky="w", padx=(0, 12), pady=5)
+        name_var = tk.StringVar(value=f"{next_number:02d}_my_fpga_project")
+        name_entry = ttk.Entry(form, textvariable=name_var)
+        name_entry.grid(row=0, column=1, sticky="ew", pady=5)
+        ttk.Label(form, text="Example: 04_uart_echo", style="Muted.TLabel").grid(
+            row=0, column=2, sticky="w", padx=(10, 0), pady=5,
         )
-        if not name:
-            return
-        name = name.strip()
-        if not re.fullmatch(r"\d{2}_[a-z][a-z0-9_]*", name):
-            messagebox.showerror(
-                "Invalid name", "Use two digits, an underscore, and lowercase words, for example 02_uart_terminal.",
-            )
-            return
-        template = WORKSPACE_ROOT / "projects" / "_template"
-        target = WORKSPACE_ROOT / "projects" / name
-        if target.exists():
-            messagebox.showerror("Already exists", f"{target} already exists.")
-            return
-        try:
-            shutil.copytree(template, target)
-        except OSError as error:
-            messagebox.showerror("Project creation failed", str(error))
-            return
-        self._refresh_projects(f"projects/{name}")
-        self._append_console(f"Created project from template: projects/{name}\n", "success")
-        messagebox.showinfo("Project ready", f"Created projects/{name}. Start in rtl/top.sv and sim/tb_top.sv.")
+        ttk.Label(form, text="Project title").grid(row=1, column=0, sticky="w", padx=(0, 12), pady=5)
+        title_var = tk.StringVar(value="My FPGA project")
+        ttk.Entry(form, textvariable=title_var).grid(row=1, column=1, sticky="ew", pady=5)
+        form.columnconfigure(1, weight=1)
+        tutorial_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            body, text="Open the interactive first-project tutorial after creation",
+            variable=tutorial_var,
+        ).pack(anchor="w", pady=(16, 0))
+        ttk.Label(
+            body,
+            text="Nothing is uploaded automatically. Simulation comes first; hardware actions remain explicit.",
+            style="Muted.TLabel",
+        ).pack(anchor="w", pady=(5, 0))
+
+        actions = ttk.Frame(dialog, padding=(22, 8, 22, 18))
+        actions.pack(fill="x")
+
+        def finish() -> None:
+            selected = tree.selection()
+            template = template_items.get(selected[0]) if selected else None
+            if template is None:
+                messagebox.showerror("Choose a template", "Select a project starting point.", parent=dialog)
+                return
+            try:
+                target = create_project(
+                    projects_root, name_var.get(), template, display_name=title_var.get(),
+                )
+            except ProjectCreationError as error:
+                messagebox.showerror("Project not created", str(error), parent=dialog)
+                name_entry.focus_set()
+                return
+            relative = target.relative_to(WORKSPACE_ROOT).as_posix()
+            dialog.destroy()
+            self._refresh_projects(relative)
+            self._append_console(f"Created a complete project: {relative}\n", "success")
+            self.open_file(target / "rtl" / "top.sv")
+            self.status_text.set(f"Project ready — {target.name}")
+            if tutorial_var.get():
+                self.root.after(120, self.show_first_project_tutorial)
+
+        ttk.Button(actions, text="Cancel", command=dialog.destroy).pack(side="right")
+        self._action_button(actions, "Create project", "plus", finish, "Accent.TButton").pack(side="right", padx=8)
+        name_entry.selection_range(3, "end")
+        name_entry.focus_set()
 
     def new_module(self) -> None:
         name = simpledialog.askstring("New HDL module", "SystemVerilog module name:", parent=self.root)
@@ -2518,12 +2834,391 @@ endmodule
         self.intelligence_notebook.select(2)
         self._refresh_coach()
 
+    def show_release_notes_if_needed(self) -> None:
+        """Present this version's notes once, without interrupting later launches."""
+        if release_notes_pending(self.settings, APP_VERSION):
+            self.show_release_notes()
+
+    def show_release_notes(self, *, mark_seen: bool = True) -> None:
+        """Show the current version's highlights in a persistent, themed window."""
+        if self.release_notes_window is not None:
+            try:
+                if self.release_notes_window.winfo_exists():
+                    self.release_notes_window.deiconify()
+                    self.release_notes_window.lift()
+                    self.release_notes_window.focus_force()
+                    return
+            except tk.TclError:
+                pass
+            self.release_notes_window = None
+
+        notes = notes_for_version(APP_VERSION)
+        dialog = tk.Toplevel(self.root)
+        self.release_notes_window = dialog
+        dialog.title(f"What's new in {APP_VERSION}")
+        dialog.geometry("980x700")
+        dialog.minsize(780, 620)
+        dialog.configure(bg=COLORS["bg"])
+        dialog.transient(self.root)
+
+        def close() -> None:
+            self.release_notes_window = None
+            try:
+                dialog.destroy()
+            except tk.TclError:
+                pass
+
+        dialog.protocol("WM_DELETE_WINDOW", close)
+        dialog.bind("<Escape>", lambda _event: close())
+
+        header = ttk.Frame(dialog, style="Top.TFrame", padding=(26, 20, 26, 18))
+        header.pack(fill="x")
+        heading_row = ttk.Frame(header, style="Top.TFrame")
+        heading_row.pack(fill="x")
+        ttk.Label(heading_row, image=self.icons["sparkle"], style="Title.TLabel").pack(
+            side="left", padx=(0, 10), anchor="n",
+        )
+        heading_copy = ttk.Frame(heading_row, style="Top.TFrame")
+        heading_copy.pack(side="left", fill="x", expand=True)
+        ttk.Label(heading_copy, text=notes.eyebrow, style="Eyebrow.TLabel").pack(anchor="w")
+        ttk.Label(
+            heading_copy, text=notes.title, style="Title.TLabel", wraplength=790, justify="left",
+        ).pack(anchor="w", pady=(5, 0))
+
+        body = ttk.Frame(dialog, padding=(26, 18, 26, 12))
+        body.pack(fill="both", expand=True)
+        intro = ttk.Frame(body, style="Card.TFrame", padding=(18, 14))
+        intro.pack(fill="x", pady=(0, 14))
+        ttk.Label(
+            intro, text=notes.summary, style="Muted.TLabel", wraplength=850, justify="left",
+        ).pack(anchor="w")
+
+        cards = ttk.Frame(body)
+        cards.pack(fill="both", expand=True)
+        cards.columnconfigure(0, weight=1, uniform="release-card")
+        cards.columnconfigure(1, weight=1, uniform="release-card")
+        for row in range(3):
+            cards.rowconfigure(row, weight=1, uniform="release-row")
+        for index, highlight in enumerate(notes.highlights):
+            row, column = divmod(index, 2)
+            card = ttk.Frame(cards, style="Card.TFrame", padding=(16, 13))
+            card.grid(
+                row=row, column=column, sticky="nsew",
+                padx=(0, 7) if column == 0 else (7, 0), pady=6,
+            )
+            title_row = ttk.Frame(card, style="Card.TFrame")
+            title_row.pack(fill="x")
+            ttk.Label(title_row, image=self.icons[highlight.icon], style="Card.TLabel").pack(
+                side="left", padx=(0, 9),
+            )
+            ttk.Label(
+                title_row, text=highlight.title, style="CardTitle.TLabel", wraplength=330,
+            ).pack(side="left", anchor="w")
+            ttk.Label(
+                card, text=highlight.description, style="Muted.TLabel",
+                wraplength=390, justify="left",
+            ).pack(anchor="w", pady=(8, 0))
+
+        footer = ttk.Frame(dialog, padding=(26, 8, 26, 20))
+        footer.pack(fill="x")
+
+        def open_changelog() -> None:
+            close()
+            self.open_file(WORKSPACE_ROOT / "CHANGELOG.md")
+
+        def start_tutorial() -> None:
+            close()
+            self.root.after_idle(self.show_first_project_tutorial)
+
+        self._action_button(
+            footer, "Start exploring", "play", close, "Accent.TButton",
+        ).pack(side="right")
+        ttk.Button(footer, text="First-project tutorial", command=start_tutorial).pack(side="right", padx=8)
+        ttk.Button(footer, text="Full changelog", command=open_changelog).pack(side="right")
+        ttk.Label(
+            footer, text="Reopen later from Help → What's new",
+            style="Muted.TLabel",
+        ).pack(side="left")
+
+        # Reserve the action row before allowing the highlight grid to expand.
+        # Tk's packer otherwise lets large fonts squeeze footer buttons on
+        # high-DPI laptop displays.
+        body.pack_forget()
+        footer.pack_forget()
+        footer.pack(side="bottom", fill="x")
+        body.pack(fill="both", expand=True)
+
+        if mark_seen:
+            mark_release_notes_seen(self.settings, APP_VERSION)
+            save_user_settings(self.settings)
+        dialog.lift()
+        dialog.focus_force()
+
+    def show_first_project_tutorial(self) -> None:
+        project_key = self._project_relative()
+        stored = self.settings.get("tutorial_progress")
+        progress_map = dict(stored) if isinstance(stored, dict) else {}
+        try:
+            current_step = max(0, min(6, int(progress_map.get(project_key, 0))))
+        except (TypeError, ValueError):
+            current_step = 0
+
+        steps = [
+            ("Read the top-level RTL", "See how board pins enter the design and where child modules connect.",
+             lambda: self.open_file(self.current_project / "rtl" / "top.sv")),
+            ("Run the project check", "Catch hierarchy, pin, testbench, and beginner RTL issues before tools run.",
+             lambda: self.analyze_project(True)),
+            ("Simulate the design", "Run the self-checking testbench. A PASS line is your first proof.",
+             lambda: self.run_fpga("sim")),
+            ("Inspect the waveform", "Open the prepared GTKWave layout and connect behavior to clock cycles.",
+             lambda: self.run_fpga("wave")),
+            ("Build the bitstream", "Synthesize, place, route, and check the 27 MHz timing target.",
+             lambda: self.run_fpga("build")),
+            ("Try SRAM safely", "Use volatile SRAM first. Flash is deliberately left outside this first lesson.",
+             lambda: self.run_fpga("upload")),
+        ]
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("First-project tutorial")
+        dialog.geometry("900x600")
+        dialog.minsize(740, 500)
+        dialog.configure(bg=COLORS["bg"])
+        dialog.transient(self.root)
+        header = ttk.Frame(dialog, style="Top.TFrame", padding=(22, 18, 22, 12))
+        header.pack(fill="x")
+        ttk.Label(header, text="Your first FPGA workflow", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(
+            header, text="One small, repeatable loop: understand → check → simulate → inspect → build → test SRAM.",
+            style="Status.TLabel",
+        ).pack(anchor="w", pady=(4, 0))
+
+        body = ttk.Frame(dialog, padding=(22, 8, 22, 18))
+        body.pack(fill="both", expand=True)
+        left = ttk.Frame(body)
+        left.pack(side="left", fill="y", padx=(0, 20))
+        right = ttk.Frame(body, style="Card.TFrame", padding=20)
+        right.pack(side="left", fill="both", expand=True)
+        step_labels: list[ttk.Label] = []
+        for position, (title, _description, _action) in enumerate(steps):
+            label = ttk.Label(left, text="", width=27, padding=(8, 9), anchor="w")
+            label.pack(fill="x", pady=2)
+            step_labels.append(label)
+
+        progress_text = tk.StringVar()
+        title_text = tk.StringVar()
+        detail_text = tk.StringVar()
+        ttk.Label(right, textvariable=progress_text, style="Eyebrow.TLabel").pack(anchor="w")
+        ttk.Label(right, textvariable=title_text, font=("Segoe UI Semibold", 18), wraplength=500).pack(
+            anchor="w", pady=(8, 8),
+        )
+        ttk.Label(right, textvariable=detail_text, style="Muted.TLabel", wraplength=500, justify="left").pack(
+            anchor="w", pady=(0, 18),
+        )
+        explanation = tk.Text(
+            right, height=10, wrap="word", state="disabled", bg=COLORS["panel_alt"], fg=COLORS["text"],
+            relief="flat", padx=14, pady=12, font=("Segoe UI", 10),
+        )
+        explanation.pack(fill="both", expand=True)
+        controls = ttk.Frame(right, padding=(0, 14, 0, 0))
+        controls.pack(fill="x")
+
+        def save_progress(value: int) -> None:
+            progress_map[project_key] = value
+            self.settings["tutorial_progress"] = progress_map
+            save_user_settings(self.settings)
+
+        selected_step = tk.IntVar(value=current_step)
+
+        def select_step(position: int) -> None:
+            selected_step.set(position)
+            title, description, _action = steps[position]
+            progress_text.set(f"STEP {position + 1} OF {len(steps)}")
+            title_text.set(title)
+            detail_text.set(description)
+            notes = (
+                "Run the action, read the console, and inspect the relevant file. "
+                "Do not chase every warning blindly: the Problems panel explains the project-level checks.\n\n"
+                "Hardware safety: simulation and build do not program the board. SRAM is volatile. "
+                "Persistent Flash remains a separate, confirmed action."
+            )
+            explanation.configure(state="normal")
+            explanation.delete("1.0", "end")
+            explanation.insert("1.0", notes)
+            explanation.configure(state="disabled")
+            for index, label in enumerate(step_labels):
+                marker = "✓" if index < current_step else "→" if index == position else "○"
+                label.configure(
+                    text=f"{marker}  {index + 1}. {steps[index][0]}",
+                    style="Accent.TLabel" if index == position else "TLabel",
+                )
+
+        for position, label in enumerate(step_labels):
+            label.bind("<Button-1>", lambda _event, value=position: select_step(value))
+
+        def run_action() -> None:
+            steps[selected_step.get()][2]()
+
+        def complete_step() -> None:
+            nonlocal current_step
+            position = selected_step.get()
+            current_step = max(current_step, min(len(steps), position + 1))
+            save_progress(current_step)
+            if position < len(steps) - 1:
+                select_step(position + 1)
+            else:
+                select_step(position)
+                messagebox.showinfo(
+                    "Workflow complete",
+                    "You completed the guided loop. Repeat it whenever you add a module or change behavior.",
+                    parent=dialog,
+                )
+
+        self._action_button(controls, "Run this step", "play", run_action, "Accent.TButton").pack(side="left")
+        ttk.Button(controls, text="Mark done and continue", command=complete_step).pack(side="left", padx=8)
+        ttk.Button(controls, text="Close", command=dialog.destroy).pack(side="right")
+        # Reserve the action row before giving the explanation the remaining
+        # height; this keeps controls visible on small/laptop displays.
+        explanation.pack_forget()
+        controls.pack_forget()
+        controls.pack(side="bottom", fill="x")
+        explanation.pack(fill="both", expand=True)
+        select_step(current_step if current_step < len(steps) else len(steps) - 1)
+
+    def show_verification_center(self) -> None:
+        benches, layouts = discover_verification_assets(self.current_project)
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Verification center")
+        dialog.geometry("820x560")
+        dialog.minsize(690, 470)
+        dialog.configure(bg=COLORS["bg"])
+        dialog.transient(self.root)
+        header = ttk.Frame(dialog, style="Top.TFrame", padding=(22, 18, 22, 12))
+        header.pack(fill="x")
+        ttk.Label(header, text="Verification center", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(
+            header, text="Choose exactly what to test, inspect assertion results, and open a repeatable waveform layout.",
+            style="Status.TLabel",
+        ).pack(anchor="w", pady=(4, 0))
+        body = ttk.Frame(dialog, padding=(22, 12, 22, 18))
+        body.pack(fill="both", expand=True)
+
+        bench_values = [item.path.relative_to(self.current_project).as_posix() for item in benches]
+        layout_values = [item.path.relative_to(self.current_project).as_posix() for item in layouts]
+        bench_var = tk.StringVar(value=bench_values[0] if bench_values else "")
+        layout_var = tk.StringVar(value=layout_values[0] if layout_values else "")
+        ttk.Label(body, text="Testbench").grid(row=0, column=0, sticky="w", padx=(0, 12), pady=6)
+        ttk.Combobox(body, textvariable=bench_var, values=bench_values, state="readonly", width=48).grid(
+            row=0, column=1, sticky="ew", pady=6,
+        )
+        ttk.Label(body, text="GTKWave layout").grid(row=1, column=0, sticky="w", padx=(0, 12), pady=6)
+        ttk.Combobox(body, textvariable=layout_var, values=layout_values, state="readonly", width=48).grid(
+            row=1, column=1, sticky="ew", pady=6,
+        )
+        body.columnconfigure(1, weight=1)
+
+        result_card = ttk.Frame(body, style="Card.TFrame", padding=16)
+        result_card.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(16, 12))
+        ttk.Label(result_card, text="Session result", style="Eyebrow.TLabel").pack(anchor="w")
+        ttk.Label(result_card, textvariable=self.verification_summary, font=("Segoe UI Semibold", 13),
+                  wraplength=680).pack(anchor="w", pady=(7, 4))
+        ttk.Label(
+            result_card,
+            text="PASS/FAIL lines are counted from the simulator output. Tool errors in the console are clickable.",
+            style="Muted.TLabel", wraplength=680,
+        ).pack(anchor="w")
+        body.rowconfigure(2, weight=1)
+
+        actions = ttk.Frame(body)
+        actions.grid(row=3, column=0, columnspan=2, sticky="ew")
+
+        def arguments(include_layout: bool = False) -> list[str]:
+            selected = next((item for item in benches if item.path.relative_to(self.current_project).as_posix() == bench_var.get()), None)
+            if selected is None:
+                return []
+            result = ["-Testbench", bench_var.get(), "-TestbenchTop", selected.top_module]
+            if include_layout and layout_var.get():
+                result.extend(["-WaveLayout", layout_var.get()])
+            return result
+
+        def run(command: str) -> None:
+            if not benches:
+                messagebox.showerror("No testbench", "Add a .v or .sv testbench under sim/ first.", parent=dialog)
+                return
+            self.run_fpga(command, arguments(command in {"wave", "debug"}))
+
+        self._action_button(actions, "Run selected", "play", lambda: run("sim"), "Accent.TButton").pack(side="left")
+        self._action_button(actions, "Debug with waves", "bug", lambda: run("debug")).pack(side="left", padx=6)
+        if benches:
+            ttk.Button(
+                actions, text="Open testbench",
+                command=lambda: self.open_file(self.current_project / bench_var.get()),
+            ).pack(side="left", padx=6)
+        ttk.Button(actions, text="Close", command=dialog.destroy).pack(side="right")
+
+    def show_hardware_setup(self) -> None:
+        ports = list_serial_ports()
+        port_text = ", ".join(item.port for item in ports) if ports else "No COM ports detected"
+        likely_uart = preferred_serial_port(ports)
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Tang Primer 20K hardware setup")
+        dialog.geometry("860x640")
+        dialog.minsize(720, 520)
+        dialog.configure(bg=COLORS["bg"])
+        dialog.transient(self.root)
+        header = ttk.Frame(dialog, style="Top.TFrame", padding=(22, 18, 22, 12))
+        header.pack(fill="x")
+        ttk.Label(header, text="Connect the board without guesswork", style="Title.TLabel").pack(anchor="w")
+        uart_summary = f"Likely Dock UART: {likely_uart.port}" if likely_uart else "Dock UART not identified"
+        ttk.Label(header, text=f"{uart_summary}  •  Detected: {port_text}", style="Status.TLabel").pack(
+            anchor="w", pady=(4, 0),
+        )
+        body_shell = ttk.Frame(dialog)
+        body_shell.pack(fill="both", expand=True, padx=16, pady=(4, 10))
+        body = tk.Text(
+            body_shell, wrap="word", state="normal", bg=COLORS["panel"], fg=COLORS["text"], relief="flat",
+            padx=22, pady=16, font=("Segoe UI", 10), spacing1=2, spacing3=5,
+        )
+        body_scroll = ttk.Scrollbar(body_shell, orient="vertical", command=body.yview)
+        body.configure(yscrollcommand=body_scroll.set)
+        body.pack(side="left", fill="both", expand=True)
+        body_scroll.pack(side="right", fill="y")
+        body.tag_configure("heading", foreground=COLORS["cyan"], font=("Segoe UI Semibold", 12))
+        body.tag_configure("good", foreground=COLORS["green"])
+        body.tag_configure("warning", foreground=COLORS["yellow"])
+        sections = [
+            ("1. USB connection\n", "heading"),
+            ("Connect the Tang Primer 20K Dock directly to a reliable USB data port. Avoid charge-only cables.\n\n", ""),
+            ("2. Choose the correct USB interfaces\n", "heading"),
+            ("JTAG Debugger (Interface 0) is JTAG. Install WinUSB on Interface 0 only.\n", "good"),
+            ("JTAG Debugger (Interface 1) is the UART bridge. Keep its normal serial driver. Do not replace it with WinUSB.\n\n", "warning"),
+            ("3. Confirm the boot/DIP switches\n", "heading"),
+            ("Use the board's normal JTAG programming position. If detection fails, power-cycle after checking the cable and switches.\n\n", ""),
+            ("4. Verify in order\n", "heading"),
+            ("Run Doctor, then Detect. Build and SRAM upload only after project diagnostics are clear. Test SRAM before persistent Flash.\n\n", ""),
+            ("5. UART\n", "heading"),
+            ("Open UART terminal, choose the COM port for Interface 1, and use the baud rate defined by your RTL (the UART lesson uses 115200, 8-N-1).", ""),
+        ]
+        for value, tag in sections:
+            body.insert("end", value, tag or None)
+        body.configure(state="disabled")
+        actions = ttk.Frame(dialog, padding=(18, 0, 18, 16))
+        actions.pack(fill="x")
+        self._action_button(actions, "Run Doctor", "doctor", lambda: self.run_fpga("doctor"), "Accent.TButton").pack(side="left")
+        self._action_button(actions, "Detect JTAG", "target", lambda: self.run_fpga("detect")).pack(side="left", padx=6)
+        self._action_button(actions, "Configure Interface 0", "flash", lambda: self.run_fpga("driver")).pack(side="left", padx=6)
+        self._action_button(actions, "Open UART", "terminal", self.open_serial_monitor).pack(side="left", padx=6)
+        ttk.Button(actions, text="Close", command=dialog.destroy).pack(side="right")
+        body_shell.pack_forget()
+        actions.pack_forget()
+        actions.pack(side="bottom", fill="x")
+        body_shell.pack(fill="both", expand=True, padx=16, pady=(4, 10))
+
     def show_about(self) -> None:
         messagebox.showinfo(
             "About Tang Primer FPGA Studio",
             f"{APP_NAME} {APP_VERSION}\n\nOffline beginner UI for the Tang Primer 20K open-source toolchain.\n"
-            "Project-aware HDL indexing, explanations, snippets, safe quick fixes, pin inspection, "
-            "build telemetry, workflow coaching, and verified hardware commands.\n\n"
+            "Guided project creation, project-aware HDL navigation, integrated UART, verification selection, "
+            "clickable tool diagnostics, pin inspection, workflow coaching, and verified hardware commands.\n\n"
             "HDL intelligence is lightweight assistance, not a full standards-complete language server. "
             "Verilator lint and simulation remain authoritative.",
         )
@@ -2563,6 +3258,7 @@ endmodule
         if extra_args:
             arguments.extend(extra_args)
         self.active_command = command
+        self.active_output = []
         self.command_started = datetime.now()
         self._append_console(
             f"\n[{self.command_started:%H:%M:%S}]  › {command.upper()}  •  {self._project_relative()}\n", "command",
@@ -2606,11 +3302,13 @@ endmodule
                 kind, payload = self.process_queue.get_nowait()
                 if kind == "line":
                     line = str(payload)
+                    self.active_output.append(line)
                     lowered = line.lower()
                     tag = "error" if any(word in lowered for word in ("error", "fatal", "failed")) else \
                           "warning" if "warning" in lowered else \
                           "success" if any(word in lowered for word in ("pass:", "complete:", "complete", "done")) else ""
-                    self._append_console(line, tag)
+                    tool_diagnostic = parse_tool_diagnostic(line, self.current_project)
+                    self._append_console(line, tag, tool_diagnostic)
                 elif kind == "done":
                     return_code = int(payload)
                     finished = datetime.now()
@@ -2633,6 +3331,13 @@ endmodule
                         self.run_state.configure(text="● Failed", foreground=COLORS["red"])
                         self.status_text.set(f"Command failed with exit code {return_code}")
                         self.console_meta.set(f"Last: {completed_command.upper()} failed  •  exit {return_code}")
+                    if completed_command in {"sim", "wave", "debug"}:
+                        state, passed, failed = summarize_verification_output("".join(self.active_output), return_code)
+                        detail = f"{state} • {passed} PASS assertion line{'s' if passed != 1 else ''}"
+                        if failed:
+                            detail += f" • {failed} failure line{'s' if failed != 1 else ''}"
+                        detail += f" • {duration:.1f}s"
+                        self.verification_summary.set(detail)
                     self.active_command = ""
                     self.process = None
                     self._set_runner_state(True)
@@ -2673,29 +3378,303 @@ endmodule
             self._append_console(f"Unable to stop process: {error}\n", "error")
 
     def open_serial_monitor(self) -> None:
-        port = simpledialog.askstring("UART monitor", "COM port:", initialvalue="COM11", parent=self.root)
-        if not port:
-            return
-        baud = simpledialog.askinteger(
-            "UART monitor", "Baud rate:", initialvalue=115200, minvalue=300, maxvalue=4_000_000, parent=self.root,
+        dialog = tk.Toplevel(self.root)
+        dialog.title("UART terminal")
+        dialog.geometry("980x650")
+        dialog.minsize(760, 500)
+        dialog.configure(bg=COLORS["bg"])
+        dialog.transient(self.root)
+        self.serial_windows.append(dialog)
+        incoming: queue.Queue[bytes] = queue.Queue()
+        connection: SerialConnection | None = None
+        history_position = len(self.uart_history)
+
+        header = ttk.Frame(dialog, style="Top.TFrame", padding=(16, 13, 16, 9))
+        header.pack(fill="x")
+        title = ttk.Frame(header, style="Top.TFrame")
+        title.pack(side="left")
+        ttk.Label(title, text="UART terminal", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(title, text="Send and inspect serial data without leaving the FPGA workflow",
+                  style="Status.TLabel").pack(anchor="w")
+        connection_state = tk.StringVar(value="Disconnected")
+        ttk.Label(header, textvariable=connection_state, style="Status.TLabel").pack(side="right")
+
+        controls = ttk.Frame(dialog, padding=(16, 8))
+        controls.pack(fill="x")
+        ttk.Label(controls, text="Port").pack(side="left")
+        port_var = tk.StringVar()
+        port_combo = ttk.Combobox(controls, textvariable=port_var, state="readonly", width=23)
+        port_combo.pack(side="left", padx=(6, 12))
+        ttk.Label(controls, text="Baud").pack(side="left")
+        baud_var = tk.StringVar(value="115200")
+        ttk.Combobox(
+            controls, textvariable=baud_var,
+            values=("9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600"),
+            width=10,
+        ).pack(side="left", padx=(6, 12))
+        ttk.Label(controls, text="View").pack(side="left")
+        mode_var = tk.StringVar(value="ascii")
+        ttk.Combobox(controls, textvariable=mode_var, values=("ascii", "hex"), state="readonly", width=7).pack(
+            side="left", padx=(6, 12),
         )
-        if baud:
-            self.run_fpga("serial", ["-Port", port.strip().upper(), "-Baud", str(baud)])
+        timestamp_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(controls, text="Timestamps", variable=timestamp_var).pack(side="left")
+
+        terminal_frame = tk.Frame(dialog, bg=COLORS["console"], highlightthickness=1,
+                                  highlightbackground=COLORS["border_soft"])
+        terminal_frame.pack(fill="both", expand=True, padx=16, pady=(4, 8))
+        terminal = tk.Text(
+            terminal_frame, wrap="word", state="disabled", bg=COLORS["console"], fg=COLORS["text"],
+            insertbackground=COLORS["cursor"], selectbackground=COLORS["selection"], relief="flat",
+            padx=12, pady=10, font=("Cascadia Mono", 10),
+        )
+        terminal.tag_configure("rx", foreground=COLORS["text"])
+        terminal.tag_configure("tx", foreground=COLORS["cyan"])
+        terminal.tag_configure("status", foreground=COLORS["muted"])
+        terminal.tag_configure("error", foreground=COLORS["red"])
+        terminal_scroll = ttk.Scrollbar(terminal_frame, orient="vertical", command=terminal.yview)
+        terminal.configure(yscrollcommand=terminal_scroll.set)
+        terminal.pack(side="left", fill="both", expand=True)
+        terminal_scroll.pack(side="right", fill="y")
+
+        send_row = ttk.Frame(dialog, padding=(16, 4, 16, 8))
+        send_row.pack(fill="x")
+        send_var = tk.StringVar()
+        send_entry = ttk.Entry(send_row, textvariable=send_var)
+        send_entry.pack(side="left", fill="x", expand=True)
+        ending_var = tk.StringVar(value="CRLF")
+        ttk.Combobox(send_row, textvariable=ending_var, values=("None", "CR", "LF", "CRLF"),
+                     state="readonly", width=7).pack(side="left", padx=7)
+
+        def append_terminal(value: str, tag: str = "status") -> None:
+            terminal.configure(state="normal")
+            terminal.insert("end", value, tag)
+            terminal.see("end")
+            terminal.configure(state="disabled")
+
+        def timestamp_prefix() -> str:
+            if not timestamp_var.get():
+                return ""
+            now = datetime.now()
+            return f"[{now:%H:%M:%S}.{now.microsecond // 1000:03d}] "
+
+        port_map: dict[str, str] = {}
+
+        def refresh_ports() -> None:
+            nonlocal port_map
+            ports = list_serial_ports()
+            port_map = {
+                f"{item.port} — {item.description}" if item.description else item.port: item.port
+                for item in ports
+            }
+            values = list(port_map)
+            current_port = port_map.get(port_var.get(), port_var.get().split(" — ", 1)[0])
+            port_combo.configure(values=values)
+            selected = next((label for label, port in port_map.items() if port == current_port), "")
+            preferred = preferred_serial_port(ports)
+            if not selected and preferred:
+                selected = next((label for label, port in port_map.items() if port == preferred.port), "")
+            port_var.set(selected)
+            message = f"Detected {len(values)} COM port{'s' if len(values) != 1 else ''}. "
+            if preferred:
+                message += f"Likely Dock UART: {preferred.port}."
+            else:
+                message += "No USB UART was auto-selected; Bluetooth modem ports are ignored."
+            append_terminal(message + " Interface 1 is UART.\n", "status")
+
+        connect_button: ttk.Button
+
+        def connected_port() -> str:
+            return port_map.get(port_var.get(), port_var.get().split(" — ", 1)[0].strip().upper())
+
+        def disconnect(announce: bool = True) -> None:
+            nonlocal connection
+            if connection:
+                connection.close()
+            connection = None
+            connection_state.set("Disconnected")
+            connect_button.configure(text="Connect")
+            port_combo.configure(state="readonly")
+            if announce:
+                append_terminal("Disconnected.\n", "status")
+
+        def toggle_connection() -> None:
+            nonlocal connection
+            if connection and connection.is_open:
+                disconnect()
+                return
+            port = connected_port()
+            if not port:
+                messagebox.showerror("No COM port", "Connect the Dock UART interface, then refresh ports.", parent=dialog)
+                return
+            try:
+                baud = int(baud_var.get())
+                if not 300 <= baud <= 4_000_000:
+                    raise ValueError
+            except ValueError:
+                messagebox.showerror("Invalid baud rate", "Enter a baud rate from 300 to 4,000,000.", parent=dialog)
+                return
+            try:
+                connection = SerialConnection(port, baud, incoming.put)
+                connection.open()
+            except (OSError, ValueError) as error:
+                connection = None
+                append_terminal(f"Could not open {port}: {error}\n", "error")
+                messagebox.showerror(
+                    "UART connection failed",
+                    f"{error}\n\nClose other serial monitors and confirm Interface 1 still uses its serial driver.",
+                    parent=dialog,
+                )
+                return
+            connection_state.set(f"Connected • {port} • {baud} baud • 8-N-1")
+            connect_button.configure(text="Disconnect")
+            port_combo.configure(state="disabled")
+            append_terminal(f"Connected to {port} at {baud} baud, 8-N-1.\n", "status")
+
+        def send(_event=None):
+            value = send_var.get()
+            if not value and ending_var.get() == "None":
+                return "break"
+            if connection is None or not connection.is_open:
+                messagebox.showinfo("UART is disconnected", "Choose a COM port and press Connect first.", parent=dialog)
+                return "break"
+            try:
+                payload = encode_terminal_input(value, mode_var.get())
+                ending = {"None": b"", "CR": b"\r", "LF": b"\n", "CRLF": b"\r\n"}[ending_var.get()]
+                payload += ending
+                connection.write(payload)
+            except (OSError, ValueError) as error:
+                append_terminal(f"Send failed: {error}\n", "error")
+                return "break"
+            prefix = timestamp_prefix()
+            append_terminal(f"{prefix}TX  {format_terminal_bytes(payload, mode_var.get())}\n", "tx")
+            if value:
+                self.uart_history.append(value)
+                if len(self.uart_history) > 100:
+                    del self.uart_history[:-100]
+            send_var.set("")
+            return "break"
+
+        def history_move(delta: int):
+            def move(_event=None):
+                nonlocal history_position
+                if not self.uart_history:
+                    return "break"
+                history_position = max(0, min(len(self.uart_history), history_position + delta))
+                send_var.set(self.uart_history[history_position] if history_position < len(self.uart_history) else "")
+                send_entry.icursor("end")
+                return "break"
+            return move
+
+        send_entry.bind("<Return>", send)
+        send_entry.bind("<Up>", history_move(-1))
+        send_entry.bind("<Down>", history_move(1))
+        self._action_button(send_row, "Send", "upload", send, "Accent.TButton").pack(side="left")
+
+        footer = ttk.Frame(dialog, padding=(16, 0, 16, 14))
+        footer.pack(fill="x")
+        connect_button = self._action_button(footer, "Connect", "terminal", toggle_connection, "Accent.TButton")
+        connect_button.pack(side="left")
+        ttk.Button(footer, text="Refresh ports", command=refresh_ports).pack(side="left", padx=6)
+
+        def clear() -> None:
+            terminal.configure(state="normal")
+            terminal.delete("1.0", "end")
+            terminal.configure(state="disabled")
+
+        def save_log() -> None:
+            target = filedialog.asksaveasfilename(
+                parent=dialog, title="Save UART log", defaultextension=".log",
+                filetypes=(("Log files", "*.log"), ("Text files", "*.txt"), ("All files", "*.*")),
+                initialfile=f"uart-{datetime.now():%Y%m%d-%H%M%S}.log",
+            )
+            if not target:
+                return
+            try:
+                Path(target).write_text(terminal.get("1.0", "end-1c"), encoding="utf-8", newline="\n")
+                append_terminal(f"Saved log to {target}\n", "status")
+            except OSError as error:
+                messagebox.showerror("Log not saved", str(error), parent=dialog)
+
+        ttk.Button(footer, text="Clear", command=clear).pack(side="right")
+        ttk.Button(footer, text="Save log…", command=save_log).pack(side="right", padx=6)
+        terminal_frame.pack_forget()
+        send_row.pack_forget()
+        footer.pack_forget()
+        footer.pack(side="bottom", fill="x")
+        send_row.pack(side="bottom", fill="x")
+        terminal_frame.pack(fill="both", expand=True, padx=16, pady=(4, 8))
+
+        def poll_incoming() -> None:
+            if not dialog.winfo_exists():
+                return
+            try:
+                while True:
+                    payload = incoming.get_nowait()
+                    if not payload:
+                        append_terminal("The serial connection stopped unexpectedly.\n", "error")
+                        disconnect(False)
+                        continue
+                    prefix = timestamp_prefix()
+                    formatted = format_terminal_bytes(payload, mode_var.get())
+                    suffix = "\n" if mode_var.get() == "hex" else ""
+                    append_terminal(f"{prefix}RX  {formatted}{suffix}", "rx")
+            except queue.Empty:
+                pass
+            dialog.after(40, poll_incoming)
+
+        def close() -> None:
+            disconnect(False)
+            if dialog in self.serial_windows:
+                self.serial_windows.remove(dialog)
+            dialog.destroy()
+
+        dialog._serial_close = close  # type: ignore[attr-defined]
+        dialog.protocol("WM_DELETE_WINDOW", close)
+        refresh_ports()
+        poll_incoming()
+        send_entry.focus_set()
 
     def clean_project(self) -> None:
         if messagebox.askyesno("Clean project", "Remove only generated files under this project's build/ folder?"):
             self.run_fpga("clean")
 
-    def _append_console(self, text: str, tag: str = "") -> None:
+    def _append_console(
+        self, text: str, tag: str = "", diagnostic: ToolDiagnostic | None = None,
+    ) -> None:
         self.console.configure(state="normal")
-        self.console.insert("end", text, tag or None)
+        tags: list[str] = [tag] if tag else []
+        if diagnostic and diagnostic.path:
+            self.console_diagnostic_sequence += 1
+            link_tag = f"tool_location_{self.console_diagnostic_sequence}"
+            self.console_diagnostics[link_tag] = diagnostic
+            self.console.tag_configure(link_tag, foreground=COLORS["cyan"], underline=True)
+            self.console.tag_bind(
+                link_tag, "<Button-1>",
+                lambda _event, value=diagnostic: self._open_tool_diagnostic(value),
+            )
+            self.console.tag_bind(link_tag, "<Enter>", lambda _event: self.console.configure(cursor="hand2"))
+            self.console.tag_bind(link_tag, "<Leave>", lambda _event: self.console.configure(cursor=""))
+            tags.append(link_tag)
+        self.console.insert("end", text, tuple(tags) if tags else None)
         self.console.see("end")
         self.console.configure(state="disabled")
+
+    def _open_tool_diagnostic(self, diagnostic: ToolDiagnostic) -> None:
+        if diagnostic.path is None:
+            return
+        self.open_file(diagnostic.path, diagnostic.line)
+        target = f"{max(1, diagnostic.line)}.{max(0, diagnostic.column - 1)}"
+        self.editor.mark_set("insert", target)
+        self.editor.see(target)
+        self.editor.focus_set()
+        self.status_text.set(f"Opened {diagnostic.path.name}:{diagnostic.line}:{diagnostic.column}")
 
     def clear_console(self) -> None:
         self.console.configure(state="normal")
         self.console.delete("1.0", "end")
         self.console.configure(state="disabled")
+        self.console_diagnostics.clear()
 
     def _on_close(self) -> None:
         if self.process and self.process.poll() is None:
@@ -2704,6 +3683,13 @@ endmodule
             self.stop_process()
         if not self._confirm_discard_or_save():
             return
+        for window in list(self.serial_windows):
+            try:
+                close_serial = getattr(window, "_serial_close", None)
+                if close_serial:
+                    close_serial()
+            except (OSError, tk.TclError):
+                continue
         self.settings["last_project"] = self._project_relative()
         save_user_settings(self.settings)
         LOGGER.info("Studio closed normally")
@@ -2763,6 +3749,15 @@ def stress_test_themes(project_name: str | None) -> int:
         studio.show_snippets()
         studio.show_command_palette()
         studio.show_pin_inspector()
+        studio.show_verification_center()
+        studio.show_hardware_setup()
+        studio.show_first_project_tutorial()
+        studio.show_release_notes(mark_seen=False)
+        studio.open_serial_monitor()
+        netlist_fixture = NetlistGraph(
+            WORKSPACE_ROOT / "build" / "theme-test.json", "Yosys theme fixture", "top", {}, {}, [],
+        )
+        open_netlist_viewer(root, netlist_fixture, COLORS, studio.icons, lambda _path, _line: None)
         root.update_idletasks()
         editor_before = studio.editor.get("1.0", "end-1c")
         open_windows = len([widget for widget in studio._walk_widgets() if isinstance(widget, tk.Toplevel)])
@@ -2898,6 +3893,18 @@ def open_demo_view(studio: FPGAStudio, view: str) -> None:
         studio.show_snippets()
     elif view == "pins":
         studio.show_pin_inspector()
+    elif view == "verification":
+        studio.show_verification_center()
+    elif view == "hardware":
+        studio.show_hardware_setup()
+    elif view == "uart":
+        studio.open_serial_monitor()
+    elif view == "tutorial":
+        studio.show_first_project_tutorial()
+    elif view == "netlist":
+        studio.show_netlist_viewer()
+    elif view == "release-notes":
+        studio.show_release_notes(mark_seen=False)
 
 
 def main() -> int:
@@ -2908,8 +3915,13 @@ def main() -> int:
     parser.add_argument("--theme", choices=tuple(THEMES), help="start with an explicit color theme")
     parser.add_argument("--ui-smoke-test", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--theme-stress-test", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--skip-startup-release-notes", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
-        "--demo-view", choices=("main", "insights", "commands", "snippets", "pins"),
+        "--demo-view", choices=(
+            "main", "insights", "commands", "snippets", "pins",
+            "verification", "hardware", "uart", "tutorial",
+            "netlist", "release-notes",
+        ),
         default="main", help=argparse.SUPPRESS,
     )
     arguments = parser.parse_args()
@@ -2926,6 +3938,8 @@ def main() -> int:
     studio = FPGAStudio(root, initial_project=arguments.project, initial_theme=arguments.theme)
     if arguments.demo_view != "main":
         root.after(650, lambda: open_demo_view(studio, arguments.demo_view))
+    elif not arguments.skip_startup_release_notes:
+        root.after(520, studio.show_release_notes_if_needed)
     root.mainloop()
     return 0
 

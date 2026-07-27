@@ -1,5 +1,7 @@
 [CmdletBinding()]
 param(
+    [ValidatePattern('^\d+\.\d+\.\d+$')]
+    [string] $Version = '1.2.0',
     [switch] $Install
 )
 
@@ -7,7 +9,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')
 $app = Join-Path $root 'build\app-dist\TangPrimerFPGAStudio\TangPrimerFPGAStudio.exe'
-$installer = Join-Path $root 'dist\TangPrimerFPGAStudio-Setup-1.1.0.exe'
+$installer = Join-Path $root "dist\TangPrimerFPGAStudio-Setup-$Version.exe"
 $testWorkspace = Join-Path $root 'build\test-workspace'
 
 if (-not (Test-Path -LiteralPath $app)) { throw "Packaged application not found: $app" }

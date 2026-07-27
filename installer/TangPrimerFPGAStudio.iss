@@ -1,5 +1,7 @@
 #define MyAppName "Tang Primer FPGA Studio"
-#define MyAppVersion "1.1.0"
+#ifndef MyAppVersion
+  #define MyAppVersion "1.2.0"
+#endif
 #define MyAppPublisher "Tang Primer FPGA Studio contributors"
 #define MyAppURL "https://github.com/atmarachchige0081/Tang-Primer-20K-FPGA-Studio"
 #define MyAppExeName "TangPrimerFPGAStudio.exe"
@@ -29,7 +31,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 CloseApplications=yes
 RestartApplications=no
-VersionInfoVersion=1.1.0.0
+VersionInfoVersion={#MyAppVersion}.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppName} installer
 VersionInfoProductName={#MyAppName}

@@ -15,9 +15,10 @@ import shutil
 import subprocess
 import sys
 
+from build_version import APP_VERSION
+
 
 APP_NAME = "Tang Primer FPGA Studio"
-APP_VERSION = "1.1.0"
 WORKSPACE_FOLDER = "Tang Primer FPGA Studio"
 STATE_FOLDER = "TangPrimerFPGAStudio"
 

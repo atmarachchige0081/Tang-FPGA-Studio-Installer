@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.2.0 — 2026-07-27
+
+- Synchronized the complete Studio v1.2.0 IDE and learning workspace.
+- Added dynamic semantic-version injection for the launcher, EXE metadata,
+  installer metadata, artifact names, tests, and release workflow.
+- Added event-driven and hourly upstream release synchronization.
+- Added first-launch release notes, netlist inspection, UART workflows, and the
+  expanded project/tooling experience from Studio v1.2.0.
+- Retained clean-VM dark/light tests, SHA-256 publication, and signed build
+  provenance for the one-file executable.
+
 ## v1.1.0 — 2026-07-26
 
 - Added the single-file Windows setup experience.
