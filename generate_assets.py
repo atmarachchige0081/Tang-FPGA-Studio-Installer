@@ -36,13 +36,13 @@ def write_version_metadata(version: str, numeric: tuple[int, int, int, int]) -> 
   kids=[
     StringFileInfo([
       StringTable('040904B0', [
-        StringStruct('CompanyName', 'Tang Primer FPGA Studio contributors'),
+        StringStruct('CompanyName', 'Tang FPGA Studio contributors'),
         StringStruct('FileDescription', 'Beginner-friendly Tang Primer 20K FPGA IDE'),
         StringStruct('FileVersion', '{version}'),
         StringStruct('InternalName', 'TangPrimerFPGAStudio'),
         StringStruct('LegalCopyright', 'MIT licensed'),
         StringStruct('OriginalFilename', 'TangPrimerFPGAStudio.exe'),
-        StringStruct('ProductName', 'Tang Primer FPGA Studio'),
+        StringStruct('ProductName', 'Tang FPGA Studio'),
         StringStruct('ProductVersion', '{version}')
       ])
     ]),

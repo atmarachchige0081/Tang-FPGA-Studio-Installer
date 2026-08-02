@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.0.0 — 2026-08-02
+
+- Replaced the packaged Python/Tk launcher with the native Tauri/Rust Studio.
+- Added synchronized packages for seven Tang Nano and Primer board variants,
+  the UART command-console lesson, HDL providers, and native release notes.
+- Preserved writable user projects while refreshing managed workspace files.
+- Added packaged native smoke tests, Desktop shortcut validation, crash logging,
+  programmer recovery, bounded viewers, and concurrency protection.
+- Generalized the public branding and repository links to Tang FPGA Studio.
+
 ## v1.2.0 — 2026-07-27
 
 - Synchronized the complete Studio v1.2.0 IDE and learning workspace.

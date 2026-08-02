@@ -1,10 +1,10 @@
-#define MyAppName "Tang Primer FPGA Studio"
+#define MyAppName "Tang FPGA Studio"
 #ifndef MyAppVersion
   #define MyAppVersion "1.2.0"
 #endif
-#define MyAppPublisher "Tang Primer FPGA Studio contributors"
-#define MyAppURL "https://github.com/atmarachchige0081/Tang-Primer-20K-FPGA-Studio"
-#define MyAppExeName "TangPrimerFPGAStudio.exe"
+#define MyAppPublisher "Tang FPGA Studio contributors"
+#define MyAppURL "https://github.com/atmarachchige0081/Tang-FPGA-Studio"
+#define MyAppExeName "fpga-studio.exe"
 
 [Setup]
 AppId={{68DF41F4-CE6D-4C47-BDA8-F6F61D619408}
@@ -47,15 +47,15 @@ Name: "toolchain"; Description: "Install or verify the pinned FPGA toolchain (re
 Name: "jtagdriver"; Description: "Open the guided JTAG Interface 0 driver tool after setup"; GroupDescription: "Hardware setup:"; Flags: unchecked
 
 [Files]
-Source: "..\build\app-dist\TangPrimerFPGAStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\build\app-dist\TangFPGAStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{userdocs}\Tang Primer FPGA Studio"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{userdocs}\Tang Primer FPGA Studio"; Tasks: desktopicon
 
 [Run]
 Filename: "C:\fpga-tools\zadig-2.9.exe"; Description: "Configure JTAG Interface 0 with WinUSB"; Flags: postinstall nowait skipifsilent; Tasks: jtagdriver; Check: FileExists('C:\fpga-tools\zadig-2.9.exe')
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: postinstall nowait skipifsilent runasoriginaluser
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; WorkingDir: "{userdocs}\Tang Primer FPGA Studio"; Flags: postinstall nowait skipifsilent runasoriginaluser
 
 [Code]
 function InitializeSetup(): Boolean;
@@ -79,20 +79,36 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  PowerShellPath, ScriptPath, Parameters: String;
+  PowerShellPath, ScriptPath, Parameters, WorkspacePath: String;
   ResultCode: Integer;
 begin
+  if CurStep = ssPostInstall then
+  begin
+    PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+    WorkspacePath := ExpandConstant('{userdocs}\Tang Primer FPGA Studio');
+    ScriptPath := ExpandConstant('{app}\Prepare-Workspace.ps1');
+    Parameters := '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath +
+      '" -Template "' + ExpandConstant('{app}\workspace-template') +
+      '" -Destination "' + WorkspacePath + '"';
+    if (not Exec(PowerShellPath, Parameters, ExpandConstant('{app}'), SW_HIDE,
+      ewWaitUntilTerminated, ResultCode)) or (ResultCode <> 0) then
+    begin
+      MsgBox('Windows could not prepare the writable FPGA workspace. ' +
+        'The application was installed, but Repair should be run before use.', mbError, MB_OK);
+      exit;
+    end;
+  end;
+
   if (CurStep = ssPostInstall) and WizardIsTaskSelected('toolchain') then
   begin
     WizardForm.StatusLabel.Caption :=
       'Installing and verifying the FPGA toolchain. This can take several minutes...';
-    PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
     ScriptPath := ExpandConstant(
-      '{app}\internal\workspace-template\scripts\setup-toolchain.ps1');
+      '{userdocs}\Tang Primer FPGA Studio\scripts\setup-toolchain.ps1');
     Parameters := '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath +
       '" -SkipVsCodeExtension';
 
-    if not Exec(PowerShellPath, Parameters, ExpandConstant('{app}'), SW_SHOW,
+    if not Exec(PowerShellPath, Parameters, WorkspacePath, SW_SHOW,
       ewWaitUntilTerminated, ResultCode) then
     begin
       MsgBox('Windows could not start the FPGA dependency installer. ' +

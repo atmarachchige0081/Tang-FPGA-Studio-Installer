@@ -1,15 +1,15 @@
-# Tang Primer FPGA Studio — Windows Installer
+# Tang FPGA Studio — Windows Installer
 
-[![Release](https://img.shields.io/github/v/release/atmarachchige0081/TangPrimer-FPGA-Studio-Installer?color=42d392)](https://github.com/atmarachchige0081/TangPrimer-FPGA-Studio-Installer/releases/latest)
-[![Build and attest](https://github.com/atmarachchige0081/TangPrimer-FPGA-Studio-Installer/actions/workflows/release.yml/badge.svg)](https://github.com/atmarachchige0081/TangPrimer-FPGA-Studio-Installer/actions/workflows/release.yml)
+[![Release](https://img.shields.io/github/v/release/atmarachchige0081/Tang-FPGA-Studio-Installer?color=42d392)](https://github.com/atmarachchige0081/Tang-FPGA-Studio-Installer/releases/latest)
+[![Build and attest](https://github.com/atmarachchige0081/Tang-FPGA-Studio-Installer/actions/workflows/release.yml/badge.svg)](https://github.com/atmarachchige0081/Tang-FPGA-Studio-Installer/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-6c63ff.svg)](LICENSE)
 [![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-23d3ee.svg)](#requirements)
 
 The one-file Windows installer for
-[Tang Primer 20K FPGA Studio](https://github.com/atmarachchige0081/Tang-Primer-20K-FPGA-Studio):
+[Tang FPGA Studio](https://github.com/atmarachchige0081/Tang-FPGA-Studio):
 a beginner-friendly IDE for learning Verilog/SystemVerilog, simulating designs,
 viewing GTKWave waveforms, building bitstreams, and programming the Sipeed Tang
-Primer 20K Dock.
+Tang Nano 1K/4K/9K/20K and Tang Primer 20K boards.
 
 | Dark workspace | Accessible light workspace |
 |---|---|
@@ -17,12 +17,12 @@ Primer 20K Dock.
 
 ## One-file installation
 
-1. Open the [latest release](https://github.com/atmarachchige0081/TangPrimer-FPGA-Studio-Installer/releases/latest).
+1. Open the [latest release](https://github.com/atmarachchige0081/Tang-FPGA-Studio-Installer/releases/latest).
 2. Download the newest `TangPrimerFPGAStudio-Setup-X.Y.Z.exe` asset.
 3. Double-click the downloaded file and approve the Windows administrator prompt.
 4. Keep **Install or verify the pinned FPGA toolchain** selected.
 5. Keep **Create a desktop shortcut** selected and finish installation.
-6. Double-click **Tang Primer FPGA Studio** on the Desktop.
+6. Double-click **Tang FPGA Studio** on the Desktop.
 
 The first setup can take several minutes because it downloads and verifies the
 approximately 1.9 GB FPGA toolchain. Later launches work offline.
@@ -33,8 +33,8 @@ before deciding whether to run the installer.
 
 ## What setup does
 
-- Installs the self-contained Python/Tkinter IDE under Program Files.
-- Requires no separate customer Python installation.
+- Installs the native Tauri/Rust Studio under Program Files.
+- Requires no separate customer Python, Node.js, or Rust installation.
 - Checks for 64-bit Windows and at least 4 GB of free disk space.
 - Downloads the pinned OSS CAD Suite from YosysHQ.
 - Verifies the toolchain download using its pinned SHA-256 checksum.
@@ -55,7 +55,7 @@ port.
 - 64-bit Windows 10 or Windows 11
 - At least 4 GB free disk space
 - Internet access during the first toolchain setup
-- Tang Primer 20K + Dock for hardware upload/flash operations
+- A supported Tang Nano or Tang Primer board for hardware upload/flash operations
 
 Simulation, HDL intelligence, project editing, and bitstream building do not
 require the board to remain attached.
@@ -77,7 +77,7 @@ Verify the signed GitHub provenance with GitHub CLI:
 
 ```powershell
 gh attestation verify .\TangPrimerFPGAStudio-Setup-X.Y.Z.exe `
-  -R atmarachchige0081/TangPrimer-FPGA-Studio-Installer
+  -R atmarachchige0081/Tang-FPGA-Studio-Installer
 ```
 
 GitHub provenance protects release integrity, but it is not Windows
@@ -102,7 +102,7 @@ dist\TangPrimerFPGAStudio-Setup-1.2.0.exe.sha256
 ```
 
 The full FPGA IDE source, HDL examples, documentation, and issue tracker are in
-the [main repository](https://github.com/atmarachchige0081/Tang-Primer-20K-FPGA-Studio).
+the [main repository](https://github.com/atmarachchige0081/Tang-FPGA-Studio).
 
 ## Automatic release synchronization
 
@@ -124,7 +124,7 @@ dispatch; it should be restricted to this installer repository.
 
 ## Uninstalling
 
-Open **Settings → Apps → Installed apps**, select **Tang Primer FPGA Studio**,
+Open **Settings → Apps → Installed apps**, select **Tang FPGA Studio**,
 and choose **Uninstall**. Projects under Documents and the large
 `C:\fpga-tools` directory are preserved intentionally so uninstalling cannot
 erase HDL work or force another toolchain download.

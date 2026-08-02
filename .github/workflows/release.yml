@@ -57,7 +57,7 @@ jobs:
           if (-not $tag) {
             $headers = @{ Accept = 'application/vnd.github+json'; 'User-Agent' = 'TangPrimer-Installer-Sync' }
             $latest = Invoke-RestMethod -Headers $headers `
-              -Uri 'https://api.github.com/repos/atmarachchige0081/Tang-Primer-20K-FPGA-Studio/releases/latest'
+              -Uri 'https://api.github.com/repos/atmarachchige0081/Tang-FPGA-Studio/releases/latest'
             $tag = $latest.tag_name
           }
           if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw "Invalid Studio release tag: $tag" }
@@ -65,7 +65,7 @@ jobs:
           $headers = @{ Accept = 'application/vnd.github+json'; 'User-Agent' = 'TangPrimer-Installer-Sync' }
           $encodedTag = [Uri]::EscapeDataString($tag)
           $upstream = Invoke-RestMethod -Headers $headers `
-            -Uri "https://api.github.com/repos/atmarachchige0081/Tang-Primer-20K-FPGA-Studio/releases/tags/$encodedTag"
+            -Uri "https://api.github.com/repos/atmarachchige0081/Tang-FPGA-Studio/releases/tags/$encodedTag"
 
           & gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           $published = $LASTEXITCODE -eq 0
@@ -83,7 +83,7 @@ jobs:
         run: |
           $source = Join-Path $env:RUNNER_TEMP 'studio-upstream'
           git clone --quiet --depth 1 --branch '${{ steps.release.outputs.tag }}' `
-            https://github.com/atmarachchige0081/Tang-Primer-20K-FPGA-Studio.git $source
+            https://github.com/atmarachchige0081/Tang-FPGA-Studio.git $source
           if ($LASTEXITCODE -ne 0) { throw 'Unable to fetch the released Studio source.' }
 
       - name: Synchronize approved application and workspace files
@@ -99,9 +99,9 @@ jobs:
           $tag = '${{ steps.release.outputs.tag }}'
           $encodedTag = [Uri]::EscapeDataString($tag)
           $upstream = Invoke-RestMethod -Headers $headers `
-            -Uri "https://api.github.com/repos/atmarachchige0081/Tang-Primer-20K-FPGA-Studio/releases/tags/$encodedTag"
+            -Uri "https://api.github.com/repos/atmarachchige0081/Tang-FPGA-Studio/releases/tags/$encodedTag"
           $notes = @"
-          # Tang Primer FPGA Studio Installer $tag
+          # Tang FPGA Studio Installer $tag
 
           This one-file Windows installer was generated automatically from the verified
           [$tag Studio release]($($upstream.html_url)). It includes the IDE, learning projects,
@@ -158,7 +158,7 @@ jobs:
       github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' && inputs.mode == 'build')
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Check out synchronized installer tag
@@ -181,6 +181,18 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: native/studio/package-lock.json
+
+      - name: Cache native Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/studio/src-tauri
+
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --yes --no-progress
@@ -189,7 +201,7 @@ jobs:
         shell: pwsh
         run: .\build-installer.ps1 -Version '${{ steps.package.outputs.version }}' -SkipInnoInstall
 
-      - name: Test packaged dark and light UI
+      - name: Test packaged native workspace and providers
         shell: pwsh
         run: .\test-installer.ps1 -Version '${{ steps.package.outputs.version }}'
 
@@ -215,7 +227,7 @@ jobs:
           gh release create '${{ steps.package.outputs.tag }}' `
             --verify-tag `
             --latest `
-            --title 'Tang Primer FPGA Studio Installer ${{ steps.package.outputs.tag }}' `
+            --title 'Tang FPGA Studio Installer ${{ steps.package.outputs.tag }}' `
             --notes-file RELEASE_NOTES.md `
             'dist/${{ steps.package.outputs.asset }}' `
             'dist/${{ steps.package.outputs.asset }}.sha256'
