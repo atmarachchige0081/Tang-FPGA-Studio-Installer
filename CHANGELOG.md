@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.0.1 — 2026-08-02
+
+- Updated the payload to the warning-free Studio 2.0.1 release.
+- Replaced legacy v1 documentation images with reproducible Studio 2 dark,
+  light, waveform, netlist, hardware, UART, Insights, and action-center views.
+- Preserved the tested native installer, workspace migration, checksum, and
+  GitHub build-provenance flow.
+
 ## v2.0.0 — 2026-08-02
 
 - Replaced the packaged Python/Tk launcher with the native Tauri/Rust Studio.

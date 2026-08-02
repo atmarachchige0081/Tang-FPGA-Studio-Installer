@@ -1,11 +1,11 @@
-# Tang FPGA Studio Installer v2.0.0
+# Tang FPGA Studio Installer v2.0.1
 
 This one-file Windows installer was generated from the verified
-[v2.0.0 Studio release](https://github.com/atmarachchige0081/Tang-FPGA-Studio/releases/tag/v2.0.0).
+[v2.0.1 Studio release](https://github.com/atmarachchige0081/Tang-FPGA-Studio/releases/tag/v2.0.1).
 It installs the native Tauri/Rust IDE, learning workspace, board packages,
 first-launch release notes, netlist and waveform viewers, and dependency setup.
 
-Download `TangPrimerFPGAStudio-Setup-2.0.0.exe` and verify the adjacent SHA-256
+Download `TangPrimerFPGAStudio-Setup-2.0.1.exe` and verify the adjacent SHA-256
 file or GitHub build-provenance attestation before installation.
 
 ## Studio release notes
@@ -21,6 +21,10 @@ Highlights:
 - beginner UART command-console project with friendly `HELP`, `PING`, LED, and status replies;
 - guarded JTAG recovery, uncompressed validated Gowin bitstreams, and a programmer watchdog;
 - accessible dark/light themes, guided hardware setup, and automatic one-file packaging.
+
+This patch also ships strict warning-free SPI, VGA, and RISC-V templates and
+replaces the installer documentation's retired v1 images with authentic Studio
+2 captures.
 
 Release acceptance passed 17 native UI checks, 22 Rust checks, 34 companion
 regression checks, repeated concurrency stress, full builds for five device

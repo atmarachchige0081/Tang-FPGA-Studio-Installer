@@ -8,12 +8,12 @@
 The one-file Windows installer for
 [Tang FPGA Studio](https://github.com/atmarachchige0081/Tang-FPGA-Studio):
 a beginner-friendly IDE for learning Verilog/SystemVerilog, simulating designs,
-viewing GTKWave waveforms, building bitstreams, and programming the Sipeed Tang
-Tang Nano 1K/4K/9K/20K and Tang Primer 20K boards.
+viewing waveforms, building bitstreams, and programming Sipeed Tang Nano
+1K/4K/9K/20K and Tang Primer 20K boards.
 
 | Dark workspace | Accessible light workspace |
 |---|---|
-| ![Dark Tang Primer FPGA Studio](docs/images/studio-main.png) | ![Light Tang Primer FPGA Studio](docs/images/studio-main-light.png) |
+| ![Dark Tang FPGA Studio 2](docs/images/studio-main.png) | ![Light Tang FPGA Studio 2](docs/images/studio-main-light.png) |
 
 ## One-file installation
 
@@ -90,15 +90,15 @@ in the release workflow. A self-signed certificate is deliberately not used.
 Clone this repository on Windows and run:
 
 ```powershell
-.\build-installer.ps1 -Version 1.2.0
-.\test-installer.ps1 -Version 1.2.0
+.\build-installer.ps1 -Version 2.0.1
+.\test-installer.ps1 -Version 2.0.1
 ```
 
 The isolated build creates:
 
 ```text
-dist\TangPrimerFPGAStudio-Setup-1.2.0.exe
-dist\TangPrimerFPGAStudio-Setup-1.2.0.exe.sha256
+dist\TangPrimerFPGAStudio-Setup-2.0.1.exe
+dist\TangPrimerFPGAStudio-Setup-2.0.1.exe.sha256
 ```
 
 The full FPGA IDE source, HDL examples, documentation, and issue tracker are in
