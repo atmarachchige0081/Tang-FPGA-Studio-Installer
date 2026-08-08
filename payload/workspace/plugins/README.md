@@ -7,3 +7,4 @@ is shown before enablement and is enforced by the Rust host.
 
 This intentionally conservative v2 boundary allows the extension system to
 grow without turning community manifests into an unrestricted shell.
+

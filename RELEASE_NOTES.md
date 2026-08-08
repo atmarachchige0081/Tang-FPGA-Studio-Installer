@@ -1,33 +1,73 @@
-# Tang FPGA Studio Installer v2.0.1
+# Tang FPGA Studio Installer v2.1.0
 
-This one-file Windows installer was generated from the verified
-[v2.0.1 Studio release](https://github.com/atmarachchige0081/Tang-FPGA-Studio/releases/tag/v2.0.1).
-It installs the native Tauri/Rust IDE, learning workspace, board packages,
-first-launch release notes, netlist and waveform viewers, and dependency setup.
+This one-file Windows installer was generated automatically from the verified
+[v2.1.0 Studio release](https://github.com/atmarachchige0081/Tang-FPGA-Studio/releases/tag/v2.1.0). It includes the IDE, learning projects,
+first-launch release notes, netlist viewer, and the dependency setup workflow.
 
-Download `TangPrimerFPGAStudio-Setup-2.0.1.exe` and verify the adjacent SHA-256
-file or GitHub build-provenance attestation before installation.
+Download `TangPrimerFPGAStudio-Setup-2.1.0.exe` and verify the adjacent
+SHA-256 file or GitHub build-provenance attestation before installation.
 
 ## Studio release notes
 
-Tang FPGA Studio 2.0 broadens the beginner path to Tang Nano 1K, 4K, 9K, and
-20K plus Tang Primer 20K Dock, Core, and Lite profiles.
+# Tang FPGA Studio 2.1 — Design Intelligence
 
-Highlights:
+Tang FPGA Studio 2.1 connects RTL understanding, implementation evidence, and
+hardware truth in one local-first workflow. It is a compatible upgrade: current
+projects, `fpga.config.psd1`, the `fpga.ps1` commands, and all seven Tang board
+profiles continue to work unchanged.
 
-- native, local-first desktop workspace with real menus and a `Ctrl+K` action center;
-- bounded waveform, netlist, and console rendering with blocking work moved off the UI thread;
-- searchable HDL patterns, source intelligence, real Git status, and declarative plugins;
-- beginner UART command-console project with friendly `HELP`, `PING`, LED, and status replies;
-- guarded JTAG recovery, uncompressed validated Gowin bitstreams, and a programmer watchdog;
-- accessible dark/light themes, guided hardware setup, and automatic one-file packaging.
+## Highlights
 
-This patch also ships strict warning-free SPI, VGA, and RISC-V templates and
-replaces the installer documentation's retired v1 images with authentic Studio
-2 captures.
+- **RTL Analysis & Architecture** — provable HDL findings with stable codes,
+  explanations, fixes, source locations, module hierarchy, instances, and
+  clock/reset domains.
+- **Verification Center** — honest `PASS`, `FAIL`, `WARNING`, and `NOT RUN`
+  stages based on current sources, real artifacts, and recorded command history.
+- **Timing intelligence** — every constrained clock, achieved frequency, slack,
+  and up to eight real place-and-route critical paths.
+- **Resource intelligence** — every utilization class emitted by nextpnr,
+  including LUT, FF, block RAM, DSP, I/O, clock buffers, and PLL resources.
+- **Hardware evidence** — an explicit observed result can be recorded against
+  the current source and bitstream; later changes make it stale automatically.
+- **Refined UX** — dedicated Analyze and Verify navigation, responsive laptop
+  layouts, accessible dark/light states, loading skeletons, clear empty/error
+  recovery, and smarter recommended actions.
 
-Release acceptance passed 17 native UI checks, 22 Rust checks, 34 companion
-regression checks, repeated concurrency stress, full builds for five device
-families, and a live Primer 20K SRAM plus 115200-baud `PING`/`PONG` test.
+## What the statuses mean
 
-Latest installer: https://github.com/atmarachchige0081/Tang-FPGA-Studio-Installer/releases/latest
+| Status | Meaning |
+|---|---|
+| `PASS` | The stage ran successfully and its evidence is current. |
+| `FAIL` | A real finding, tool run, timing result, or observed behavior failed. |
+| `WARNING` | Evidence exists but is incomplete, unconstrained, or stale. |
+| `NOT RUN` | No evidence exists; the Studio does not substitute a guess. |
+
+A JTAG pass confirms communication with the programming chain. An SRAM/flash
+pass confirms that programming completed. Neither is reported as proof that the
+design behaves correctly; that final stage requires the behavior observed on
+the board to be recorded.
+
+## Upgrade
+
+Installed users can download the v2.1.0 one-file Windows installer. Contributors
+can update the repository, run `npm install` in `studio`, then use
+`npm run desktop`. The pinned OSS CAD Suite and existing project folders do not
+need to be reinstalled or migrated.
+
+## Windows artifact
+
+- NSIS installer: `Tang FPGA Studio_2.1.0_x64-setup.exe`
+- Size: 2,524,673 bytes
+- SHA-256: `673A60FA2127BA381AC6EDAF8DD1B0AD299244F4FCD161C6F725A2C996C92676`
+- Packaged headless smoke test: passed
+
+The artifact is not Authenticode-signed by a trusted commercial Windows
+publisher, so Windows can display **Unknown publisher**. Verify the SHA-256
+before running a downloaded copy.
+
+## Scope boundary
+
+The live analyzer intentionally avoids claims it cannot support reliably. It
+does not replace Verilator, Icarus, Yosys, nextpnr, formal verification, or a
+specialist CDC tool. See [CHANGELOG.md](../CHANGELOG.md) for the exact additions,
+fixes, verification results, and known limitations.

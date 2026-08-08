@@ -12,3 +12,4 @@ To contribute a template:
 3. Add the entry to `catalog.json`; never reference a path outside this repo.
 4. Run lint, simulation, and build before submitting the change.
 5. Explain controls, architecture, expected waveform, and limitations in its README.
+

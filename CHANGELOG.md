@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.1.0 — automatically synchronized
+
+- Packaged and tested the v2.1.0 Studio release from its immutable Git tag.
+- Updated the bundled IDE, examples, documentation, and screenshots.
+- Published a checksum and signed GitHub build-provenance attestation.
+
 ## v2.0.1 — 2026-08-02
 
 - Updated the payload to the warning-free Studio 2.0.1 release.

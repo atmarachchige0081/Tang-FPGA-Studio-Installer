@@ -14,3 +14,4 @@ ports that are not present in their top module.
 
 Programming modes are SRAM (`-m`, volatile) and verified external flash (`-f
 --verify`, persistent). FPGA Studio always labels those modes separately.
+
