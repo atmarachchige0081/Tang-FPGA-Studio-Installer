@@ -1,73 +1,74 @@
-# Tang FPGA Studio Installer v2.1.0
+# Tang FPGA Studio Installer v3.0.0
 
 This one-file Windows installer was generated automatically from the verified
-[v2.1.0 Studio release](https://github.com/atmarachchige0081/Tang-FPGA-Studio/releases/tag/v2.1.0). It includes the IDE, learning projects,
+[v3.0.0 Studio release](https://github.com/atmarachchige0081/Tang-FPGA-Studio/releases/tag/v3.0.0). It includes the IDE, learning projects,
 first-launch release notes, netlist viewer, and the dependency setup workflow.
 
-Download `TangPrimerFPGAStudio-Setup-2.1.0.exe` and verify the adjacent
+Download `TangPrimerFPGAStudio-Setup-3.0.0.exe` and verify the adjacent
 SHA-256 file or GitHub build-provenance attestation before installation.
 
 ## Studio release notes
 
-# Tang FPGA Studio 2.1 — Design Intelligence
+# Tang FPGA Studio 3.0 — Hardware Intelligence
 
-Tang FPGA Studio 2.1 connects RTL understanding, implementation evidence, and
-hardware truth in one local-first workflow. It is a compatible upgrade: current
-projects, `fpga.config.psd1`, the `fpga.ps1` commands, and all seven Tang board
-profiles continue to work unchanged.
+Tang FPGA Studio 3.0 turns implementation evidence into one connected local
+workflow: trace a source signal to physical logic and timing, instrument real
+internal nets, capture them on the FPGA, and compare measured build outcomes.
 
-## Highlights
+## Major capabilities
 
-- **RTL Analysis & Architecture** — provable HDL findings with stable codes,
-  explanations, fixes, source locations, module hierarchy, instances, and
-  clock/reset domains.
-- **Verification Center** — honest `PASS`, `FAIL`, `WARNING`, and `NOT RUN`
-  stages based on current sources, real artifacts, and recorded command history.
-- **Timing intelligence** — every constrained clock, achieved frequency, slack,
-  and up to eight real place-and-route critical paths.
-- **Resource intelligence** — every utilization class emitted by nextpnr,
-  including LUT, FF, block RAM, DSP, I/O, clock buffers, and PLL resources.
-- **Hardware evidence** — an explicit observed result can be recorded against
-  the current source and bitstream; later changes make it stale automatically.
-- **Refined UX** — dedicated Analyze and Verify navigation, responsive laptop
-  layouts, accessible dark/light states, loading skeletons, clear empty/error
-  recovery, and smarter recommended actions.
+- A shared cached RTL → netlist → physical → timing → analyzer design graph.
+- Cross-domain traceability with real path delay segments and explicit
+  measured, inferred, or unavailable evidence.
+- A generated on-chip logic analyzer with 1–16 channels, 128 total bits,
+  64–4096 samples, circular pre-trigger storage, AND triggers, and binary UART
+  capture transport.
+- Separate analyzer images and isolated optimization experiments that never
+  edit RTL or overwrite the normal build.
+- Ten-dimension Design Health, evidence-backed recommendations, history,
+  snapshots, thresholded regressions, and build comparison.
+- A verified Hardware Intelligence UART laboratory for the complete guided
+  simulation, implementation, trace, probe, capture, and optimization flow.
+- Natural, responsive dark and light interfaces for Trace, Analyzer, and
+  Design Health, plus v3 first-launch release notes and command navigation.
 
-## What the statuses mean
+## Safety and evidence
 
-| Status | Meaning |
-|---|---|
-| `PASS` | The stage ran successfully and its evidence is current. |
-| `FAIL` | A real finding, tool run, timing result, or observed behavior failed. |
-| `WARNING` | Evidence exists but is incomplete, unconstrained, or stale. |
-| `NOT RUN` | No evidence exists; the Studio does not substitute a guess. |
+Analyzer uploads are SRAM-only. Flash remains a separate confirmed action.
+Probe discovery uses real synthesized netnames; optimized-away or ambiguous
+signals are shown as unavailable. Estimated analyzer cost is replaced by
+measured resource and timing deltas after implementation. Experiments are
+allowlisted, isolated, bounded, and retain the baseline.
 
-A JTAG pass confirms communication with the programming chain. An SRAM/flash
-pass confirms that programming completed. Neither is reported as proof that the
-design behaves correctly; that final stage requires the behavior observed on
-the board to be recorded.
+The application is local after toolchain setup, sends no telemetry, and does
+not require an account. A successful compile, JTAG scan, upload, and hardware
+capture remain distinct facts.
 
-## Upgrade
+## Release validation
 
-Installed users can download the v2.1.0 one-file Windows installer. Contributors
-can update the repository, run `npm install` in `studio`, then use
-`npm run desktop`. The pinned OSS CAD Suite and existing project folders do not
-need to be reinstalled or migrated.
+The maintained Primer 20K Dock release design passes strict Verilator lint,
+self-checking Icarus UART simulation, Yosys synthesis, nextpnr placement and
+routing, and Apicula bitstream packing at 27 MHz. The instrumented build has
+also completed full real place-and-route and packing with measured analyzer
+resource and timing reports.
 
-## Windows artifact
+The final gate passed 23 frontend tests, all 46 Rust tests including the two
+maintained-project artifact tests, 34 Python compatibility tests, four HDL
+lint/simulation flows, five parallel board-family builds, three repeated
+concurrency rounds, strict formatting and warning-free Clippy, and a full npm
+audit with zero reported vulnerabilities. The normal Hardware Intelligence
+demo used 315 LUT4 and 138 DFF and reached 193.12 MHz. The separate instrumented
+command-console image used 1,454 LUT4, 391 DFF, and 2 BSRAM and reached
+209.91 MHz. Both passed the 27 MHz constraint and produced structurally
+validated uncompressed Gowin bitstreams. The optimized Windows application,
+packaged smoke test, and one-file NSIS installer also pass.
 
-- NSIS installer: `Tang FPGA Studio_2.1.0_x64-setup.exe`
-- Size: 2,524,673 bytes
-- SHA-256: `673A60FA2127BA381AC6EDAF8DD1B0AD299244F4FCD161C6F725A2C996C92676`
-- Packaged headless smoke test: passed
+The connected release host exposed the expected WinUSB JTAG Interface 0 and
+preserved UART COM15, but its debugger endpoint returned
+`ftdi_usb_reset failed`. Studio reported the reconnect procedure and did not
+claim an upload or physical capture. A successful on-device capture therefore
+remains a separate hardware acceptance step after reconnecting that endpoint.
 
-The artifact is not Authenticode-signed by a trusted commercial Windows
-publisher, so Windows can display **Unknown publisher**. Verify the SHA-256
-before running a downloaded copy.
-
-## Scope boundary
-
-The live analyzer intentionally avoids claims it cannot support reliably. It
-does not replace Verilator, Icarus, Yosys, nextpnr, formal verification, or a
-specialist CDC tool. See [CHANGELOG.md](../CHANGELOG.md) for the exact additions,
-fixes, verification results, and known limitations.
+See [Hardware Analyzer](HARDWARE_ANALYZER.md), the
+[v3 architecture](architecture/v3-hardware-intelligence.md), and
+[Deployment](DEPLOYMENT.md).
