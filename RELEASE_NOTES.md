@@ -1,84 +1,53 @@
-# Tang FPGA Studio Installer v3.1.0
+# Tang FPGA Studio Installer v3.1.1
 
 This one-file Windows installer was generated automatically from the verified
-[v3.1.0 Studio release](https://github.com/atmarachchige0081/Tang-FPGA-Studio/releases/tag/v3.1.0). It includes the IDE, learning projects,
+[v3.1.1 Studio release](https://github.com/atmarachchige0081/Tang-FPGA-Studio/releases/tag/v3.1.1). It includes the IDE, learning projects,
 first-launch release notes, netlist viewer, and the dependency setup workflow.
 
-Download `TangPrimerFPGAStudio-Setup-3.1.0.exe` and verify the adjacent
+Download `TangPrimerFPGAStudio-Setup-3.1.1.exe` and verify the adjacent
 SHA-256 file or GitHub build-provenance attestation before installation.
 
 ## Studio release notes
 
-# Tang FPGA Studio 3.1 — Tang Console support
+# Tang FPGA Studio 3.1.1 - editor loading hotfix
 
-Tang FPGA Studio 3.1 adds the Sipeed Tang Console 60K and current C-revision
-Tang Console 138K as complete board packages, not UI aliases. Board selection
-now carries the exact part, device/revision, oscillator, electrical constraints,
-timing constraint, build backend, and programmer alias from project creation
-through reopen, build, and programming.
+Tang FPGA Studio 3.1.1 fixes a production packaging defect that could leave an
+opened source file on Monaco's **Loading...** screen forever. The filesystem
+read completed, but the editor component used its default CDN loader. The
+desktop content-security policy correctly blocks remote scripts, so Monaco
+could not initialize in the packaged application.
 
-## Hardware configuration
+The hotfix configures `@monaco-editor/react` with the installed
+`monaco-editor` package and a Vite-bundled editor worker. Editor code now ships
+inside the application, starts under the existing security policy, and remains
+available offline.
 
-| Target | FPGA and Gowin device | Clock | Buttons | LEDs | Programmer | Build route |
-|---|---|---:|---|---|---|---|
-| Tang Console 60K | `GW5AT-LV60PG484AC1/I0`, `GW5AT-60B`, PG484A, revision B | `V22`, 50 MHz | `AB13`/`AA13`, active-low, `LVCMOS15` | `G11`/`U12`, active-low, `LVCMOS33` | `tangconsole`, BL616 | Gowin EDA |
-| Tang Console 138K | `GW5AST-LV138PG484AC1/I0`, `GW5AST-138C`, PG484A, revision C | `V22`, 50 MHz | `AB13`/`AA13`, active-low, `LVCMOS33` | `G11`/`U12`, active-low, `LVCMOS33` | `tangmega138k`, BL616 | Pinned OSS CAD Suite |
+## Scope
 
-The two packages are intentionally independent. In particular, the button-bank
-voltage differs, and Gowin documents a B-to-C silicon change for 138K devices.
-The C-revision profile must not be silently used for an older B-revision SOM.
+- Added one local Monaco loader configuration module.
+- Loaded that configuration before the editor component mounts.
+- Added a focused regression test for the bundled Monaco instance and worker.
+- Bumped application, npm, Cargo, and Tauri metadata to 3.1.1.
 
-Hardware facts were cross-checked against Sipeed's
-[Tang Console documentation](https://wiki.sipeed.com/hardware/en/tang/tang-console/mega-console.html),
-[IDE/device table](https://wiki.sipeed.com/hardware/en/tang/common-doc/get_started/install-the-ide.html),
-[Tang Mega 60K documentation](https://wiki.sipeed.com/hardware/en/tang/tang-mega-60k/mega-60k.html),
-[Tang Mega 138K documentation](https://wiki.sipeed.com/hardware/en/tang/tang-mega-138k/mega-138k.html),
-and Sipeed's official
-[60K](https://github.com/sipeed/TangMega-60K-example) and
-[138K](https://github.com/sipeed/TangMega-138K-example) reference projects.
-Carrier pin/electrical mappings were independently compared with the open
-[NanoApple2 Console constraints](https://github.com/MiSTle-Dev/NanoApple2) and
-[SNESTang Console constraints](https://github.com/nand2mario/snestang).
+This patch does not change FPGA board definitions, generated projects, build
+routes, constraints, programming behavior, UART behavior, or hardware drivers.
 
-## Beginner workflow
+## Incident note
 
-1. Open **New FPGA project**.
-2. Select **Tang Console LED and buttons**.
-3. Choose **Sipeed Tang Console 60K** or **Sipeed Tang Console 138K**.
-4. Run **Simulate** to verify the lesson without hardware.
-5. Run **Build**. Studio chooses the recorded backend and shows a focused
-   Gowin EDA prerequisite if a 60K user has not installed it.
-6. Connect the board's MCU/JTAG-UART port, run **Detect**, then use **SRAM** for
-   volatile testing before persistent flash.
+The relevant editor and security configuration predates v3.1.0; comparison
+with v3.0.0 found no editor-code change in the v3.1 feature commit. The defect
+was therefore exposed in the v3.1.0 production package, but it was not caused
+by the Tang Console feature work. No false regression commit is attributed.
 
-The generated project contains only its Console `.cst` and `.sdc`; no Primer
-constraint remains. Closing/reopening reads the unchanged board ID from
-`fpga.project.json`.
+## Verification
 
-## Toolchain boundary
+- Focused Monaco loader regression test: required to pass.
+- Complete frontend type check, production build, and test suite: required to
+  pass.
+- Rust backend tests and repository release checks: required to pass.
+- Production NSIS installer build and packaged file-edit smoke test: required
+  before publication.
 
-The v3.1 pinned OSS CAD Suite contains Yosys `gw5a` support and a full
-`GW5AST-138C` nextpnr/Apicula database, but it does not contain a `GW5AT-60B`
-database. Console 60K therefore generates and runs a Gowin EDA version-5
-project using `gw_sh`, with SystemVerilog 2017, explicit `GW5AT-60B` /
-`gw5at60b-002`, and uncompressed bitstreams compatible with Studio's safety
-checks. Sipeed requires Gowin EDA Education 1.9.11.03 or newer for this device.
-
-## Validation evidence
-
-- Board registry/device/revision/constraint/programmer tests: passed.
-- Project generation and stale-constraint removal for both boards: passed.
-- Console starter self-checking simulation: passed.
-- Full parallel bitstream smoke build for Console 138K plus five existing
-  device families: passed.
-- Six-design Console 138K build matrix: passed with real synthesis,
-  place-and-route, packing, and bitstream validation.
-- Six-design Console 60K Yosys and generated Gowin `.gprj`/Tcl matrix: passed.
-- Frontend type check, production build, and UI tests: see the tagged release
-  workflow and release notes.
-
-Gowin EDA is not installed on the release machine, and no physical Tang Console
-was available. Consequently, 60K place-and-route/bitstream generation and live
-Console JTAG/SRAM/flash/I/O behavior were not performed and are not claimed.
-The previously connected Primer 20K is a different target and cannot validate
-Console hardware.
+Physical FPGA hardware is not required for this UI-only hotfix. Existing Tang
+Console 60K/138K and other board regression suites remain part of the release
+gate; no new hardware-validation claim is made.
