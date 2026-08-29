@@ -1,53 +1,126 @@
-# Tang FPGA Studio Installer v3.1.1
+# Tang FPGA Studio Installer v3.2.0
 
 This one-file Windows installer was generated automatically from the verified
-[v3.1.1 Studio release](https://github.com/atmarachchige0081/Tang-FPGA-Studio/releases/tag/v3.1.1). It includes the IDE, learning projects,
+[v3.2.0 Studio release](https://github.com/atmarachchige0081/Tang-FPGA-Studio/releases/tag/v3.2.0). It includes the IDE, learning projects,
 first-launch release notes, netlist viewer, and the dependency setup workflow.
 
-Download `TangPrimerFPGAStudio-Setup-3.1.1.exe` and verify the adjacent
+Download `TangPrimerFPGAStudio-Setup-3.2.0.exe` and verify the adjacent
 SHA-256 file or GitHub build-provenance attestation before installation.
 
 ## Studio release notes
 
-# Tang FPGA Studio 3.1.1 - editor loading hotfix
+# Tang FPGA Studio 3.2 — professional, configurable HDL workspace
 
-Tang FPGA Studio 3.1.1 fixes a production packaging defect that could leave an
-opened source file on Monaco's **Loading...** screen forever. The filesystem
-read completed, but the editor component used its default CDN loader. The
-desktop content-security policy correctly blocks remote scripts, so Monaco
-could not initialize in the packaged application.
+Tang FPGA Studio 3.2 combines three related improvements in one release:
 
-The hotfix configures `@monaco-editor/react` with the installed
-`monaco-editor` package and a Vite-bundled editor worker. Editor code now ships
-inside the application, starts under the existing security policy, and remains
-available offline.
+1. a compact professional desktop interface;
+2. portable configurable FPGA projects; and
+3. real project-aware Verilog/SystemVerilog editing assistance.
 
-## Scope
+## Professional interface
 
-- Added one local Monaco loader configuration module.
-- Loaded that configuration before the editor component mounts.
-- Added a focused regression test for the bundled Monaco instance and worker.
-- Bumped application, npm, Cargo, and Tauri metadata to 3.1.1.
+- The start screen leads with the active project, physical board, FPGA device,
+  clock, and build state.
+- The shell, menus, activity bar, explorer, editor, toolbar, output dock,
+  Problems panel, and status bar use one restrained dark/light design system.
+- Engineering data is presented as dense property rows, tables, and panels
+  rather than marketing cards.
+- The responsive release layouts cover 1280 × 720 through full-HD maximized
+  windows, including project creation and output/error states.
 
-This patch does not change FPGA board definitions, generated projects, build
-routes, constraints, programming behavior, UART behavior, or hardware drivers.
+## Template and custom projects
 
-## Incident note
+The New Project dialog has two real modes:
 
-The relevant editor and security configuration predates v3.1.0; comparison
-with v3.0.0 found no editor-code change in the v3.1 feature commit. The defect
-was therefore exposed in the v3.1.0 production package, but it was not caused
-by the Tang Console feature work. No false regression commit is attributed.
+- **Template project** copies a verified preset, applies a compatible board
+  package, and then creates a normal portable project.
+- **Custom project** starts from the portable hardware scaffold and records an
+  explicit board, FPGA target, top module, timing target, constraint paths,
+  build route, programmer route, and source structure.
 
-## Verification
+Board and silicon are separate records in the schema-v2
+`fpga.project.json` manifest. A board is the physical Sipeed platform and its
+clock, constraints, and programmer. The FPGA target records Gowin vendor,
+family, complete device identifier, package, and speed grade. The backend
+validates that the selected combination is represented by an installed board
+package; the UI does not offer arbitrary devices that the toolchain cannot
+build.
 
-- Focused Monaco loader regression test: required to pass.
-- Complete frontend type check, production build, and test suite: required to
-  pass.
-- Rust backend tests and repository release checks: required to pass.
-- Production NSIS installer build and packaged file-edit smoke test: required
-  before publication.
+Paths stored by project creation are project-relative. Custom constraint names
+remain under `constraints/`, while source and test roots are `rtl/` and `sim/`
+in this release because the build script supports those roots. Recent projects
+can be reopened from the start screen, and the active/recent selection is
+written transactionally to `.fpga-studio/workspace-state.json`.
 
-Physical FPGA hardware is not required for this UI-only hotfix. Existing Tang
-Console 60K/138K and other board regression suites remain part of the release
-gate; no new hardware-validation claim is made.
+## HDL intelligence
+
+The Monaco editor uses the local Rust HDL index and a lightweight current-
+buffer scan. Implemented Verilog/SystemVerilog assistance includes:
+
+- context-aware completion for project modules, signals, ports, parameters,
+  localparams, functions, tasks, packages, typedefs, macros, keywords, and
+  project HDL include files;
+- named-port snippets restricted to the interface of the module currently
+  being instantiated;
+- module signature/port help and compact hover declarations;
+- project-wide definitions and references, with `F12` definition navigation
+  and Monaco's `Shift+F12` references view;
+- a cached symbol index, module hierarchy, top-module awareness, clock/reset
+  data, duplicate/missing module findings, definite structural diagnostics,
+  and unclosed-module syntax diagnostics;
+- inline editor markers and a grouped/filterable Problems panel whose entries
+  open the exact file, line, and column;
+- bounded asynchronous project-text search plus file and HDL symbol search.
+
+Indexing runs after project open/save rather than on every keystroke. The
+current buffer contributes local symbols immediately, so typing remains
+responsive while the persisted project index stays cached. If indexing fails,
+the editor continues with syntax highlighting, folding, bracket completion,
+indentation, multi-cursor editing, and normal file save behavior.
+
+### Keyboard shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl+K` | Command/action center |
+| `Ctrl+P` | Go to project file |
+| `Ctrl+T` | Go to HDL symbol |
+| `Ctrl+Shift+F` | Search project text |
+| `F12` | Go to definition |
+| `Shift+F12` | Find references |
+| `Ctrl+G` | Go to line (Monaco) |
+| `Ctrl+S` | Save active file |
+| `Ctrl+Shift+B` | Build project |
+| `Ctrl+W` | Close active tab |
+| `Ctrl+Tab` | Switch editor tabs |
+
+## Validation evidence
+
+- Frontend type check, optimized Vite build, and 32 Vitest tests.
+- 49 passing Rust tests plus two explicitly ignored artifact-dependent tests.
+- The HDL performance tests cover 5,000 completion candidates under a 100 ms
+  budget and an 800-signal/assignment source within a 3-second debug-test
+  indexing budget. The full 49-test Rust run completed in 2.87 seconds after
+  compilation on the release machine.
+- Project tests cover template creation, custom creation, validation rollback,
+  portable manifests, custom constraints, search, persistence, and reopen.
+- Existing Nano, Primer, Console 60K, and Console 138K registry and generation
+  tests remain part of the backend and release gates.
+
+The final release gate additionally runs the repository HDL simulations,
+board-profile checks, production Tauri build, installer generation, packaged
+launch smoke test, and manual dark/light UI inspection.
+
+## Honest limitations
+
+- HDL intelligence supports Verilog and SystemVerilog. VHDL is searchable as
+  text but has no parser, synthesis, completion, or navigation claim.
+- Custom targets are restricted to installed Tang/Gowin board packages. The
+  UI does not claim support for arbitrary vendors or unregistered
+  board/device combinations.
+- `rtl/`, `sim/`, and `constraints/` are the supported portable source
+  structure for this release.
+- Static HDL diagnostics are intentionally conservative; the full Yosys,
+  Verilator, Icarus, nextpnr, and Gowin EDA output remains authoritative.
+- The Console 60K implementation route still requires Gowin EDA because the
+  pinned open-source database does not contain GW5AT-60B.
