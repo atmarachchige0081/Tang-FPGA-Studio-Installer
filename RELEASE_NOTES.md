@@ -1,126 +1,109 @@
-# Tang FPGA Studio Installer v3.2.0
+# Tang FPGA Studio Installer v3.2.1
 
 This one-file Windows installer was generated automatically from the verified
-[v3.2.0 Studio release](https://github.com/atmarachchige0081/Tang-FPGA-Studio/releases/tag/v3.2.0). It includes the IDE, learning projects,
+[v3.2.1 Studio release](https://github.com/atmarachchige0081/Tang-FPGA-Studio/releases/tag/v3.2.1). It includes the IDE, learning projects,
 first-launch release notes, netlist viewer, and the dependency setup workflow.
 
-Download `TangPrimerFPGAStudio-Setup-3.2.0.exe` and verify the adjacent
+Download `TangPrimerFPGAStudio-Setup-3.2.1.exe` and verify the adjacent
 SHA-256 file or GitHub build-provenance attestation before installation.
 
 ## Studio release notes
 
-# Tang FPGA Studio 3.2 — professional, configurable HDL workspace
+# Tang FPGA Studio 3.2.1 — Windows reliability hotfix
 
-Tang FPGA Studio 3.2 combines three related improvements in one release:
+Tang FPGA Studio 3.2.1 is a focused hotfix for the 3.2 professional IDE. It
+does not change project formats, board identifiers, or supported build routes.
+Existing 3.2 projects open without migration.
 
-1. a compact professional desktop interface;
-2. portable configurable FPGA projects; and
-3. real project-aware Verilog/SystemVerilog editing assistance.
+## What was fixed
 
-## Professional interface
+### Genuine Verilator execution on Windows
 
-- The start screen leads with the active project, physical board, FPGA device,
-  clock, and build state.
-- The shell, menus, activity bar, explorer, editor, toolbar, output dock,
-  Problems panel, and status bar use one restrained dark/light design system.
-- Engineering data is presented as dense property rows, tables, and panels
-  rather than marketing cards.
-- The responsive release layouts cover 1280 × 720 through full-HD maximized
-  windows, including project creation and output/error states.
+OSS CAD Suite includes both an extensionless Perl launcher named `verilator`
+and the native `verilator_bin.exe`. Windows PowerShell could treat the Perl
+launcher as a document, open it in another application, and return without
+running lint. That caused stalled jobs and, in one path, a misleading success.
 
-## Template and custom projects
+Studio now selects `verilator_bin.exe`, validates its runtime data directory,
+sets `VERILATOR_ROOT`, and uses the same resolved executable for lint and
+Hardware Doctor. Missing runtime data fails with an installation repair message
+instead of silently skipping analysis.
 
-The New Project dialog has two real modes:
+### Stable verification under load
 
-- **Template project** copies a verified preset, applies a compatible board
-  package, and then creates a normal portable project.
-- **Custom project** starts from the portable hardware scaffold and records an
-  explicit board, FPGA target, top module, timing target, constraint paths,
-  build route, programmer route, and source structure.
+Vitest now uses at most two workers. This keeps the frontend suite responsive
+during repeated stress rounds and concurrent HDL/board checks on a typical
+laptop, avoiding intermittent worker startup timeouts under memory pressure.
+The HDL indexing regression keeps its original three-second debug budget but
+uses the faster of two fresh measurements, filtering one unrelated scheduler
+pause without weakening the performance ceiling.
 
-Board and silicon are separate records in the schema-v2
-`fpga.project.json` manifest. A board is the physical Sipeed platform and its
-clock, constraints, and programmer. The FPGA target records Gowin vendor,
-family, complete device identifier, package, and speed grade. The backend
-validates that the selected combination is represented by an installed board
-package; the UI does not offer arbitrary devices that the toolchain cannot
-build.
+Windows users can launch the repository checks even when local PowerShell
+script execution is restricted:
 
-Paths stored by project creation are project-relative. Custom constraint names
-remain under `constraints/`, while source and test roots are `rtl/` and `sim/`
-in this release because the build script supports those roots. Recent projects
-can be reopened from the start screen, and the active/recent selection is
-written transactionally to `.fpga-studio/workspace-state.json`.
+```powershell
+.\scripts\release-check.cmd
+.\scripts\stress-test.cmd -Rounds 3 -Parallelism 2
+.\scripts\test-console-boards.cmd
+```
 
-## HDL intelligence
+### Correct maintained HDL examples
 
-The Monaco editor uses the local Rust HDL index and a lightweight current-
-buffer scan. Implemented Verilog/SystemVerilog assistance includes:
+Real native Verilator lint exposed warnings that the previous launcher path had
+not executed. The maintained Primer examples now document and narrowly waive
+only the intentional Gowin configuration-memory power-on initialization.
 
-- context-aware completion for project modules, signals, ports, parameters,
-  localparams, functions, tasks, packages, typedefs, macros, keywords, and
-  project HDL include files;
-- named-port snippets restricted to the interface of the module currently
-  being instantiated;
-- module signature/port help and compact hover declarations;
-- project-wide definitions and references, with `F12` definition navigation
-  and Monaco's `Shift+F12` references view;
-- a cached symbol index, module hierarchy, top-module awareness, clock/reset
-  data, duplicate/missing module findings, definite structural diagnostics,
-  and unclosed-module syntax diagnostics;
-- inline editor markers and a grouped/filterable Problems panel whose entries
-  open the exact file, line, and column;
-- bounded asynchronous project-text search plus file and HDL symbol search.
+The UART command console also fixes width diagnostics and an input-safety bug:
+an overlong command such as `LED OFFX` can no longer be truncated to `LED OFF`.
+It returns the friendly unknown-command response and leaves the LED unchanged.
+The simulator explicitly checks that behavior.
 
-Indexing runs after project open/save rather than on every keystroke. The
-current buffer contributes local symbols immediately, so typing remains
-responsive while the persisted project index stays cached. If indexing fails,
-the editor continues with syntax highlighting, folding, bracket completion,
-indentation, multi-cursor editing, and normal file save behavior.
+### Honest hardware recovery guidance
 
-### Keyboard shortcuts
+JTAG failure messages now distinguish:
 
-| Shortcut | Action |
-|---|---|
-| `Ctrl+K` | Command/action center |
-| `Ctrl+P` | Go to project file |
-| `Ctrl+T` | Go to HDL symbol |
-| `Ctrl+Shift+F` | Search project text |
-| `F12` | Go to definition |
-| `Shift+F12` | Find references |
-| `Ctrl+G` | Go to line (Monaco) |
-| `Ctrl+S` | Save active file |
-| `Ctrl+Shift+B` | Build project |
-| `Ctrl+W` | Close active tab |
-| `Ctrl+Tab` | Switch editor tabs |
+- no programmer or cable visible;
+- an Interface 0 FTDI reset problem;
+- a USB endpoint that did not enumerate cleanly; and
+- an adapter that exists but cannot be opened.
 
-## Validation evidence
+Studio never changes a USB driver automatically. On supported dual-interface
+Tang debuggers, only JTAG Interface 0 should use WinUSB; Interface 1 remains the
+UART serial interface. Descriptor or error `-12` failures first recommend a
+direct port and a known data-capable cable before any driver action.
 
-- Frontend type check, optimized Vite build, and 32 Vitest tests.
-- 49 passing Rust tests plus two explicitly ignored artifact-dependent tests.
-- The HDL performance tests cover 5,000 completion candidates under a 100 ms
-  budget and an 800-signal/assignment source within a 3-second debug-test
-  indexing budget. The full 49-test Rust run completed in 2.87 seconds after
-  compilation on the release machine.
-- Project tests cover template creation, custom creation, validation rollback,
-  portable manifests, custom constraints, search, persistence, and reopen.
-- Existing Nano, Primer, Console 60K, and Console 138K registry and generation
-  tests remain part of the backend and release gates.
+## Release verification
 
-The final release gate additionally runs the repository HDL simulations,
-board-profile checks, production Tauri build, installer generation, packaged
-launch smoke test, and manual dark/light UI inspection.
+The hotfix release gate covers:
 
-## Honest limitations
+- TypeScript type checking and an optimized Vite production build;
+- 32 bounded frontend tests;
+- the complete Rust backend suite and Clippy with warnings denied;
+- Python UI, command-runner, board-registry, and Windows-launcher regressions;
+- genuine native Verilator lint plus Icarus simulation for maintained examples;
+- full build smoke tests for Tang Nano 1K, 4K, 9K, 20K, Tang Primer 20K, and
+  Tang Console 138K, with the registered Gowin route check for Console 60K;
+- three repeated UI/store/backend rounds while board builds run in parallel;
+- production Tauri/NSIS packaging and a packaged executable launch smoke test;
+- `npm audit` across 216 dependencies and `cargo audit` across 425 locked Rust
+  dependencies, with no known vulnerability reported for the Windows release.
 
-- HDL intelligence supports Verilog and SystemVerilog. VHDL is searchable as
-  text but has no parser, synthesis, completion, or navigation claim.
-- Custom targets are restricted to installed Tang/Gowin board packages. The
-  UI does not claim support for arbitrary vendors or unregistered
-  board/device combinations.
-- `rtl/`, `sim/`, and `constraints/` are the supported portable source
-  structure for this release.
-- Static HDL diagnostics are intentionally conservative; the full Yosys,
-  Verilator, Icarus, nextpnr, and Gowin EDA output remains authoritative.
-- The Console 60K implementation route still requires Gowin EDA because the
-  pinned open-source database does not contain GW5AT-60B.
+The Cargo advisory database additionally reports maintenance/unsoundness
+warnings for GTK3-era Linux-only Tauri dependencies. They are absent from the
+`x86_64-pc-windows-msvc` dependency tree and are not linked into this Windows
+installer.
+
+## Hardware validation boundary
+
+During hotfix verification, the connected computer reported a USB device
+descriptor failure and openFPGALoader error `-12`; Windows did not enumerate an
+FTDI/JTAG or COM endpoint. No SRAM upload or persistent flash was attempted
+against an unidentified endpoint. Reconnect the debugger directly with a known
+data cable, verify it appears in Hardware Doctor, and use volatile SRAM upload
+before any persistent write.
+
+## Upgrade
+
+Install 3.2.1 over 3.2.0 using the Windows x64 installer. Projects and settings
+remain compatible. The first launch shows these notes once; they remain
+available from **Help → Release notes**.
