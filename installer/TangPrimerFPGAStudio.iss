@@ -43,8 +43,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: checkedonce
-Name: "toolchain"; Description: "Install or verify the pinned FPGA toolchain (recommended)"; GroupDescription: "FPGA dependencies:"; Flags: checkedonce
-Name: "jtagdriver"; Description: "Open the guided JTAG Interface 0 driver tool after setup"; GroupDescription: "Hardware setup:"; Flags: unchecked
+Name: "toolchain"; Description: "Download and verify OSS CAD Suite (~1.9 GB) and the signed Zadig helper (recommended)"; GroupDescription: "Required FPGA build and programming tools:"; Flags: checkedonce
+Name: "jtagdriver"; Description: "Open Zadig after setup for guided JTAG Interface 0 configuration"; GroupDescription: "Optional hardware setup:"; Flags: unchecked
 
 [Files]
 Source: "..\build\app-dist\TangFPGAStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -74,6 +74,22 @@ begin
   begin
     MsgBox('At least 4 GB of free space is required for the IDE and FPGA toolchain.', mbError, MB_OK);
     Result := False;
+  end;
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if (CurPageID = wpSelectTasks) and
+     (not WizardIsTaskSelected('toolchain')) then
+  begin
+    Result := MsgBox(
+      'The FPGA dependency download is not selected.' + #13#10 + #13#10 +
+      'The editor will install, but lint, simulation, bitstream builds, JTAG ' +
+      'detection, upload, and flash will not work until OSS CAD Suite and the ' +
+      'verified Zadig helper are installed.' + #13#10 + #13#10 +
+      'Continue without the FPGA tools?',
+      mbConfirmation, MB_YESNO) = IDYES;
   end;
 end;
 
@@ -112,14 +128,16 @@ begin
       ewWaitUntilTerminated, ResultCode) then
     begin
       MsgBox('Windows could not start the FPGA dependency installer. ' +
-        'The IDE was installed; use Tools > Install/verify toolchain to retry.',
+        'The IDE was installed; rerun Setup or run .\fpga.ps1 setup from ' +
+        'your Tang FPGA Studio workspace to retry.',
         mbError, MB_OK);
     end
     else if ResultCode <> 0 then
     begin
       MsgBox('The FPGA dependency installation returned error code ' +
         IntToStr(ResultCode) + '. The IDE was installed; check your network ' +
-        'connection and use Tools > Install/verify toolchain to retry.',
+        'connection, then rerun Setup or run .\fpga.ps1 setup from your ' +
+        'Tang FPGA Studio workspace.',
         mbError, MB_OK);
     end;
   end;

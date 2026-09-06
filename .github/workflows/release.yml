@@ -197,6 +197,10 @@ jobs:
         shell: pwsh
         run: choco install innosetup --yes --no-progress
 
+      - name: Verify dependency-install contract
+        shell: pwsh
+        run: .\test-dependency-contract.ps1
+
       - name: Build installer and checksum
         shell: pwsh
         run: .\build-installer.ps1 -Version '${{ steps.package.outputs.version }}' -SkipInnoInstall

@@ -20,12 +20,17 @@ viewing waveforms, building bitstreams, and programming Sipeed Tang Nano
 1. Open the [latest release](https://github.com/atmarachchige0081/Tang-FPGA-Studio-Installer/releases/latest).
 2. Download the newest `TangPrimerFPGAStudio-Setup-X.Y.Z.exe` asset.
 3. Double-click the downloaded file and approve the Windows administrator prompt.
-4. Keep **Install or verify the pinned FPGA toolchain** selected.
+4. Keep **Download and verify OSS CAD Suite (~1.9 GB) and the signed Zadig
+   helper** selected. This is the recommended default.
 5. Keep **Create a desktop shortcut** selected and finish installation.
 6. Double-click **Tang FPGA Studio** on the Desktop.
 
 The first setup can take several minutes because it downloads and verifies the
 approximately 1.9 GB FPGA toolchain. Later launches work offline.
+
+The installer warns before continuing if this dependency task is deselected.
+Skipping it installs the editor only; lint, simulation, FPGA builds, JTAG
+detection, upload, and flash remain unavailable until `fpga.ps1 setup` is run.
 
 Windows may currently display **Unknown publisher** because the project does not
 have a commercial Authenticode certificate. See [Release trust](#release-trust)
@@ -44,6 +49,10 @@ before deciding whether to run the installer.
 - Creates a writable workspace at
   `Documents\Tang Primer FPGA Studio` without overwriting user projects.
 - Provides repair, tool diagnosis, and a standard Windows uninstaller.
+
+The large third-party tools are downloaded during setup rather than embedded
+inside the Studio EXE. This keeps the application package manageable and lets
+the installer verify the exact upstream files before they are used.
 
 JTAG driver replacement is intentionally guided rather than automatic. If it
 is needed, choose only **JTAG Debugger / USB Serial Converter A — Interface 0**
