@@ -1,54 +1,26 @@
-# Tang FPGA Studio Installer v3.3.0
+# Tang FPGA Studio Installer v3.3.1
 
 This one-file Windows installer was generated automatically from the verified
-[v3.3.0 Studio release](https://github.com/atmarachchige0081/Tang-FPGA-Studio/releases/tag/v3.3.0). It includes the IDE, learning projects,
+[v3.3.1 Studio release](https://github.com/atmarachchige0081/Tang-FPGA-Studio/releases/tag/v3.3.1). It includes the IDE, learning projects,
 first-launch release notes, netlist viewer, and the dependency setup workflow.
 
-Download `TangPrimerFPGAStudio-Setup-3.3.0.exe` and verify the adjacent
+Download `TangPrimerFPGAStudio-Setup-3.3.1.exe` and verify the adjacent
 SHA-256 file or GitHub build-provenance attestation before installation.
 
 ## Studio release notes
 
-# Tang FPGA Studio 3.3.0 — flexible, AI-ready project workflows
+# Tang FPGA Studio 3.3.1 — installer integration hotfix
 
-Tang FPGA Studio 3.3.0 turns project creation and repository navigation into a
-complete desktop workflow while strengthening the file-safety boundary beneath
-the editor.
+Tang FPGA Studio 3.3.1 preserves the complete flexible-project workflow from
+3.3.0 and corrects its one-file Windows installer synchronization.
 
-## Highlights
+The installer now copies the shared project `AGENTS.md` guide to both places
+that need it: the workspace payload delivered to users and the native Rust
+source layout that embeds the guide at compile time. A dependency-contract
+regression verifies that both copies exist and are identical before a package
+is built.
 
-- Name projects naturally with spaces, mixed case, and Unicode instead of a
-  required numbered folder convention.
-- Choose any writable project destination using the native Windows folder
-  picker. The tool runner follows that project root, and generated artifacts
-  remain in its local `build/` directory.
-- Create files and folders from Explorer, refresh the project tree, and find
-  files, symbols, or text across the active project.
-- Apply project-wide replacements transactionally; unsaved editor buffers are
-  protected and failed writes are rolled back.
-- Receive an `AGENTS.md` guide in every template and custom project so AI coding
-  tools understand the HDL layout, simulation/build commands, constraints, and
-  safe upload/flash workflow.
-- Recover from interrupted saves and receive confirmation before switching a
-  project or closing with unsaved tabs.
-
-## Hardening
-
-Project traversal now rejects symlink and junction escapes. Board/plugin
-manifests, timing and netlist reports, Git status, and HDL analysis are bounded
-before parsing. Monaco's JSON, CSS, HTML, and TypeScript workers are routed to
-their intended services so language intelligence no longer stalls on a missing
-worker method.
-
-## One-file Windows installation
-
-The dedicated installer still performs the required first-machine setup. Its
-recommended task downloads the pinned OSS CAD Suite (approximately 1.9 GB) and
-the signed Zadig helper, verifies their pinned SHA-256 digests, and validates
-Zadig's Akeo Consulting Authenticode signature. The large third-party packages
-are not hidden inside the IDE executable.
-
-Zadig does not replace a driver automatically. If JTAG repair is necessary, the
-guided flow applies WinUSB only to Interface 0; Interface 1 remains the UART COM
-port. Users who deselect the dependency task receive a clear warning that lint,
-simulation, build, detection, upload, and flash will remain unavailable.
+All Studio 3.3 functionality remains unchanged: natural project names,
+arbitrary writable save locations, Explorer create and refresh actions,
+project-wide find and transactional replace, external-project Git context,
+and guarded editing and project switching.

@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.3.1 — automatically synchronized
+
+- Packaged and tested the v3.3.1 Studio release from its immutable Git tag.
+- Updated the bundled IDE, examples, documentation, and screenshots.
+- Published a checksum and signed GitHub build-provenance attestation.
+
 ## v3.3.0 — automatically synchronized
 
 - Packaged and tested the v3.3.0 Studio release from its immutable Git tag.
