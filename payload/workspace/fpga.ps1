@@ -25,7 +25,8 @@ $projectCandidate = if ([IO.Path]::IsPathRooted($Project)) {
     Join-Path $WorkspaceRoot $Project
 }
 $ProjectRoot = [IO.Path]::GetFullPath($projectCandidate).TrimEnd('\')
-if ($ProjectRoot -ne $WorkspaceRoot -and
+if (-not [IO.Path]::IsPathRooted($Project) -and
+    $ProjectRoot -ne $WorkspaceRoot -and
     -not $ProjectRoot.StartsWith($WorkspaceRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
     throw "Project must be inside the workspace: $ProjectRoot"
 }
@@ -39,6 +40,7 @@ if (-not (Test-Path -LiteralPath $ConfigPath)) {
 $Config = Import-PowerShellDataFile -LiteralPath $ConfigPath
 $BuildDir = Join-Path $ProjectRoot 'build'
 $script:VerilatorExecutable = 'verilator'
+$script:VerilatorWarningArguments = @()
 
 function Write-Usage {
     @'
@@ -64,7 +66,8 @@ Tang Primer 20K FPGA commands
 Add -NoBuild to upload/flash to reuse build/top.fs.
 Use -Testbench sim/tb_name.sv -TestbenchTop tb_name to select one testbench.
 Use -WaveLayout sim/name.gtkw with wave/debug to select a GTKWave layout.
-Use -Project projects/<folder> to run a project from the workspace root.
+Use -Project projects/<folder> or an absolute project path. Build artifacts are
+always written inside that project's build/ directory.
 '@ | Write-Host
 }
 
@@ -99,6 +102,10 @@ function Initialize-Toolchain {
         }
         $env:VERILATOR_ROOT = $verilatorRoot
         $script:VerilatorExecutable = $nativeVerilator
+        # PROCASSINIT was introduced after the Verilator version packaged by
+        # Ubuntu LTS. Keep the waiver on the pinned executable invocation so
+        # older tools never have to parse an unknown source metacomment.
+        $script:VerilatorWarningArguments = @('-Wno-PROCASSINIT')
     }
 
     # Yosys/ABC on Windows still splits some temporary paths at spaces. Keep
@@ -299,7 +306,7 @@ function Invoke-Lint {
     Invoke-NativeTool $script:VerilatorExecutable (@(
         '--lint-only', '--timing', '-Wall', '-Wno-DECLFILENAME',
         '--top-module', $Config.Top
-    ) + $sources)
+    ) + $script:VerilatorWarningArguments + $sources)
     Write-Host 'RTL lint passed.' -ForegroundColor Green
 }
 

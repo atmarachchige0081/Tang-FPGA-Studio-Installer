@@ -1,3 +1,3 @@
 """Version injected by the installer build and upstream synchronization jobs."""
 
-APP_VERSION = "3.2.1"
+APP_VERSION = "3.3.0"
