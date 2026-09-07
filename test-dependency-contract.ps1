@@ -6,6 +6,8 @@ $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')
 $installerPath = Join-Path $root 'installer\TangPrimerFPGAStudio.iss'
 $setupPath = Join-Path $root 'payload\workspace\scripts\setup-toolchain.ps1'
+$nativeAgentPath = Join-Path $root 'native\projects\AGENTS.md'
+$workspaceAgentPath = Join-Path $root 'payload\workspace\projects\AGENTS.md'
 
 function Assert-Contains {
     param(
@@ -18,6 +20,17 @@ function Assert-Contains {
 
 $installer = Get-Content -LiteralPath $installerPath -Raw
 $setup = Get-Content -LiteralPath $setupPath -Raw
+
+if (-not (Test-Path -LiteralPath $nativeAgentPath -PathType Leaf)) {
+    throw 'The native Studio build is missing projects/AGENTS.md required by include_str!.'
+}
+if (-not (Test-Path -LiteralPath $workspaceAgentPath -PathType Leaf)) {
+    throw 'The packaged workspace is missing the project AI-development guide.'
+}
+if ((Get-FileHash -Algorithm SHA256 -LiteralPath $nativeAgentPath).Hash -ne
+    (Get-FileHash -Algorithm SHA256 -LiteralPath $workspaceAgentPath).Hash) {
+    throw 'Native and packaged AGENTS.md guides must remain identical.'
+}
 
 Assert-Contains $installer 'Name:\s*"toolchain"[^\r\n]*OSS CAD Suite[^\r\n]*Zadig' `
     'The installer must visibly offer the OSS CAD Suite and Zadig dependency task.'

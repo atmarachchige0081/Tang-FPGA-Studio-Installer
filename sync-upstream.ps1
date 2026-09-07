@@ -17,7 +17,7 @@ $installerRoot = [IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')
 $upstreamRoot = [IO.Path]::GetFullPath($SourceRoot).TrimEnd('\')
 $excludedDirectories = @('.git', '.github', '.fpga-studio', '__pycache__', 'build', 'dist', 'gen', 'obj_dir', 'node_modules', 'target')
 
-foreach ($required in @('studio\package.json', 'studio\src-tauri\Cargo.toml', 'fpga.ps1', 'projects', 'boards', 'plugins', 'templates', 'ip', 'scripts\setup-toolchain.ps1')) {
+foreach ($required in @('studio\package.json', 'studio\src-tauri\Cargo.toml', 'fpga.ps1', 'projects\AGENTS.md', 'boards', 'plugins', 'templates', 'ip', 'scripts\setup-toolchain.ps1')) {
     if (-not (Test-Path -LiteralPath (Join-Path $upstreamRoot $required))) {
         throw "The upstream checkout is incomplete; missing $required under $upstreamRoot"
     }
@@ -69,6 +69,12 @@ Reset-ManagedDirectory $workspaceTarget
 Reset-ManagedDirectory $imagesTarget
 
 Copy-FilteredTree -Source (Join-Path $upstreamRoot 'studio') -Destination $nativeTarget
+
+# The native Rust project embeds this guide at compile time so every generated
+# template and custom project receives the same AI-development instructions.
+$nativeAgentTarget = Join-Path $installerRoot 'native\projects\AGENTS.md'
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $nativeAgentTarget) | Out-Null
+Copy-Item -LiteralPath (Join-Path $upstreamRoot 'projects\AGENTS.md') -Destination $nativeAgentTarget -Force
 
 foreach ($file in @('fpga.ps1', 'fpga.config.psd1', 'INSTALL.md', 'LICENSE', 'README.md')) {
     $source = Join-Path $upstreamRoot $file
