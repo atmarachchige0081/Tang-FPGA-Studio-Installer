@@ -61,16 +61,10 @@ if ($NativeBinary) {
             & npm.cmd ci --no-audit --no-fund
             if ($LASTEXITCODE -ne 0) { throw "npm ci failed with exit code $LASTEXITCODE" }
         }
-        & npm.cmd run build
-        if ($LASTEXITCODE -ne 0) { throw "Native frontend build failed with exit code $LASTEXITCODE" }
-        $cargo = Get-Command cargo.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source
-        if (-not $cargo) {
-            $candidate = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
-            if (Test-Path -LiteralPath $candidate) { $cargo = $candidate }
-        }
-        if (-not $cargo) { throw 'Cargo was not found on the Windows build machine.' }
-        & $cargo build --release --manifest-path 'src-tauri\Cargo.toml'
-        if ($LASTEXITCODE -ne 0) { throw "Native Rust build failed with exit code $LASTEXITCODE" }
+        $tauri = Join-Path $nativeStudio 'node_modules\.bin\tauri.cmd'
+        if (-not (Test-Path -LiteralPath $tauri -PathType Leaf)) { throw 'Tauri CLI is missing. Restore the locked Node dependencies.' }
+        & $tauri build --no-bundle
+        if ($LASTEXITCODE -ne 0) { throw "Tauri production build failed with exit code $LASTEXITCODE" }
         $builtBinary = Join-Path $nativeStudio 'src-tauri\target\release\fpga-studio.exe'
     } finally { Pop-Location }
 }
@@ -78,6 +72,10 @@ if ($NativeBinary) {
 Copy-Item -LiteralPath $builtBinary -Destination (Join-Path $appDirectory 'fpga-studio.exe') -Force
 Copy-Item -LiteralPath (Join-Path $root 'src\Prepare-Workspace.ps1') -Destination $appDirectory -Force
 Copy-Item -LiteralPath (Join-Path $root 'payload\workspace') -Destination (Join-Path $appDirectory 'workspace-template') -Recurse -Force
+$packagedBinary = Join-Path $appDirectory 'fpga-studio.exe'
+$packagedWorkspace = Join-Path $appDirectory 'workspace-template'
+$smokeProcess = Start-Process -FilePath $packagedBinary -ArgumentList @('--workspace', ('"' + $packagedWorkspace + '"'), '--smoke-test') -WindowStyle Hidden -Wait -PassThru
+if ($smokeProcess.ExitCode -ne 0) { throw "Packaged Studio smoke test failed with exit code $($smokeProcess.ExitCode). Refusing to ship this installer." }
 
 $isccCandidates = @(
     (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
