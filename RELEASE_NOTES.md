@@ -1,44 +1,23 @@
-# Tang FPGA Studio Installer v3.4.0
+# Tang FPGA Studio Installer v3.4.1
 
 This one-file Windows installer was generated automatically from the verified
-[v3.4.0 Studio release](https://github.com/atmarachchige0081/Tang-FPGA-Studio/releases/tag/v3.4.0). It includes the IDE, learning projects,
+[v3.4.1 Studio release](https://github.com/atmarachchige0081/Tang-FPGA-Studio/releases/tag/v3.4.1). It includes the IDE, learning projects,
 first-launch release notes, netlist viewer, and the dependency setup workflow.
 
-Download `TangPrimerFPGAStudio-Setup-3.4.0.exe` and verify the adjacent
+Download `TangPrimerFPGAStudio-Setup-3.4.1.exe` and verify the adjacent
 SHA-256 file or GitHub build-provenance attestation before installation.
 
 ## Studio release notes
 
-# Tang FPGA Studio 3.4.0 — native AI assistant
+# Tang FPGA Studio 3.4.1 — version-label correction
 
-Studio 3.4 adds an optional project-scoped coding agent powered by the locally
-installed Codex App Server. Each user connects their own ChatGPT account or
-supplies their own OpenAI API key. No developer account, key, or authentication
-file is included in the repository or installer.
+This patch release corrects the title-bar badge that showed `3.3` in the
+v3.4.0 application. The badge, welcome screen, and first-launch button now
+read their version from the package metadata so future releases stay aligned.
 
-The AI panel provides streaming responses, conversation history, project and
-editor context, clickable file references, model and supported thinking-level
-selection, stop/retry controls, and reviewable file and command approvals. It
-can request FPGA workflow actions, but hardware programming remains gated by
-explicit approval. A model appearing in the provider catalog does not guarantee
-that a particular account can use it; the provider reports access at turn time.
+It includes the [v3.4.0 AI assistant and production packaging changes](RELEASE_3.4.0.md),
+including the Stop watchdog and stale-turn protection. Each user signs in with
+their own Codex account or API key; no developer credentials are packaged.
 
-Replies now render emphasis, lists, code, and file references. Tool activity
-appears in chronological order and completed work collapses into a compact
-summary. Stop can disconnect an unresponsive provider so the panel does not
-remain stuck in a running state.
-
-This release also fixes the rejected legacy permission setting, missing spaces
-in streamed replies, duplicate execution of an approved FPGA tool request, and
-malformed tool requests that previously could leave the agent waiting. Generic
-shell commands can only be approved once per request.
-
-The one-file Windows installer now invokes the Tauri production build instead
-of compiling a development-mode executable with raw Cargo. It smoke-tests the
-copied executable against the bundled workspace before producing an installer,
-preventing the previous `127.0.0.1 refused to connect` startup failure from
-being published again.
-
-Studio remains usable without AI. See the [AI Assistant guide](AI_ASSISTANT.md)
-for sign-in, safety boundaries, and troubleshooting. The separately published
-installer continues to guide users through the FPGA toolchain prerequisites.
+Open AI Assistant with the robot icon in the left activity bar, **Edit → Open
+AI Assistant**, or **Ctrl+Shift+A**.
