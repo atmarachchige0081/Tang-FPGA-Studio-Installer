@@ -1,7 +1,7 @@
 {
   "name": "tang-fpga-studio",
   "private": true,
-  "version": "3.4.1",
+  "version": "3.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,14 +11,16 @@
     "test:watch": "vitest",
     "check": "npm run build && npm run test",
     "tauri": "tauri",
-    "desktop": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-tauri.ps1 dev",
-    "desktop:build": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-tauri.ps1 build",
-    "desktop:doctor": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-tauri.ps1 check"
+    "desktop": "node scripts/run-tauri.mjs dev",
+    "desktop:build": "node scripts/run-tauri.mjs build",
+    "desktop:doctor": "node scripts/run-tauri.mjs check"
   },
   "dependencies": {
     "@monaco-editor/react": "4.7.0",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.3",
+    "@xterm/addon-fit": "0.10.0",
+    "@xterm/xterm": "5.5.0",
     "@xyflow/react": "12.11.2",
     "lucide-react": "1.28.0",
     "monaco-editor": "0.56.0",
@@ -29,7 +31,6 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.11.4",
-    "@tauri-apps/cli-win32-x64-msvc": "2.11.4",
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "16.3.2",
     "@types/react": "19.2.18",

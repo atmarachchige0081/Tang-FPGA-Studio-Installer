@@ -1,3 +1,4 @@
+export interface TerminalEvent { id: string; sequence: number; data: string; exited: boolean }
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
@@ -109,9 +110,40 @@ const demoBoards: BoardProfile[] = [demoBoard, {
 export const bridge = {
   isDesktop,
 
+  async pollProjectChanges(root: string, project: string, since?: number): Promise<{ revision: number; changes: import("../types").ProjectFileChange[] | null; limited: boolean }> {
+    if (isDesktop()) return invoke("poll_project_changes",{root,project,since});
+    return {revision:0,changes:[],limited:false};
+  },
+  async markChangeReviewed(root: string, project: string, path: string, revision: number): Promise<void> {
+    if (isDesktop()) await invoke("mark_change_reviewed",{root,project,path,revision});
+  },
+  async syncProjectFiles(root: string, project: string, files: Array<{ path: string; version: string }>): Promise<Array<{ path: string; version: string; content: string | null; missing: boolean; error?: string }>> {
+    if (isDesktop()) return invoke("sync_project_files", { root, project, files });
+    return [];
+  },
+  async projectTree(root: string, project: string): Promise<ProjectNode[]> {
+    if (isDesktop()) return invoke("project_tree", { root, project });
+    return demoTree;
+  },
+  async terminalOpen(root: string, project: string, cols: number, rows: number): Promise<TerminalEvent> {
+    if (isDesktop()) return invoke("terminal_open", { root, project, cols, rows });
+    throw new Error("The shell is available in the desktop app.");
+  },
+  async terminalWrite(id: string, data: string): Promise<void> { if (isDesktop()) await invoke("terminal_write", { id, data }); },
+  async terminalResize(id: string, cols: number, rows: number): Promise<void> { if (isDesktop()) await invoke("terminal_resize", { id, cols, rows }); },
+  async terminalClose(id: string): Promise<void> { if (isDesktop()) await invoke("terminal_close", { id }); },
+  async onTerminalEvent(handler: (event: TerminalEvent) => void): Promise<UnlistenFn> {
+    if (isDesktop()) return listen<TerminalEvent>("terminal-output", (event) => handler(event.payload));
+    return () => undefined;
+  },
   async workspaceSnapshot(): Promise<WorkspaceSnapshot> {
     if (isDesktop()) return invoke<WorkspaceSnapshot>("workspace_snapshot");
     return { root: "Browser preview", project: "Tang Primer 20K Demo", projectPath: ".", tree: demoTree, recentProjects: [] };
+  },
+
+  async recognizeProjectFolder(folder: string): Promise<Array<{ path: string; name: string; identification: string }>> {
+    if (isDesktop()) return invoke("recognize_project_folder", { folder });
+    return [{ path: folder, name: folder.split(/[\\/]/).at(-1) ?? "FPGA project", identification: "Preview project" }];
   },
 
   async openProject(root: string, project: string): Promise<WorkspaceSnapshot> {
@@ -444,6 +476,11 @@ export const bridge = {
     return true;
   },
 
+  async aiPendingRequests(): Promise<AiEvent[]> {
+    if (isDesktop()) return invoke<AiEvent[]>("ai_pending_requests");
+    return [];
+  },
+
   async aiAccount(refresh = false): Promise<AiAccountStatus> {
     if (isDesktop()) return invoke<AiAccountStatus>("ai_account_read", { refresh });
     return { account: demoAiAuthenticated ? { type: "chatgpt", email: "preview@example.com", planType: "preview" } : null, requiresOpenaiAuth: true };
@@ -514,6 +551,16 @@ export const bridge = {
       window.dispatchEvent(new CustomEvent<AiEvent>("fpga-ai-demo", { detail: { method: "turn/completed", params: { threadId, turn: { id: turnId, status: "completed" } }, timestamp: new Date().toISOString() } }));
     }, 80);
     return { turn: { id: turnId, status: "inProgress" } };
+  },
+
+  async aiInlineCompletion(project: string, path: string, prefix: string, suffix: string): Promise<string> {
+    if (isDesktop()) return invoke<string>("ai_inline_completion", { project, path, prefix, suffix });
+    return "";
+  },
+
+  async aiTurnSteer(threadId: string, turnId: string, prompt: string): Promise<Record<string, unknown>> {
+    if (isDesktop()) return invoke<Record<string, unknown>>("ai_turn_steer", { threadId, turnId, prompt });
+    return { turnId };
   },
 
   async aiTurnInterrupt(threadId: string, turnId: string): Promise<Record<string, unknown>> {

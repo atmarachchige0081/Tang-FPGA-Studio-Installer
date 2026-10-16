@@ -31,6 +31,36 @@ const MAX_TREE_ENTRIES: usize = 20_000;
 const PROJECT_AGENT_GUIDE: &str = include_str!("../../../projects/AGENTS.md");
 static FILE_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
+/// Seed a writable per-user workspace from packaged resources. Never replace user files.
+#[cfg(target_os = "linux")]
+pub fn copy_bundled_workspace(source: &Path, destination: &Path) -> Result<(), String> {
+    fs::create_dir_all(destination).map_err(|error| error.to_string())?;
+    for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let kind = entry.file_type().map_err(|error| error.to_string())?;
+        let target = destination.join(entry.file_name());
+        if kind.is_dir() {
+            copy_bundled_workspace(&entry.path(), &target)?;
+        } else if kind.is_file() {
+            // create_new prevents overwrites even when another instance starts concurrently.
+            match OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&target)
+            {
+                Ok(mut file) => {
+                    use std::io::Write;
+                    let bytes = fs::read(entry.path()).map_err(|error| error.to_string())?;
+                    file.write_all(&bytes).map_err(|error| error.to_string())?;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(error.to_string()),
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn discover_workspace() -> Result<PathBuf, String> {
     if let Ok(override_root) = std::env::var("FPGA_STUDIO_WORKSPACE") {
         return canonical_workspace(&override_root);
@@ -60,6 +90,93 @@ pub fn snapshot() -> Result<WorkspaceSnapshot, String> {
     snapshot_for(&root, active, state.recent_projects)
 }
 
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecognizedProject {
+    pub path: String,
+    pub name: String,
+    pub identification: String,
+}
+
+/// Inspect selected folders without executing project scripts or changing files.
+pub fn recognize_projects(folder: &str) -> Result<Vec<RecognizedProject>, String> {
+    let selected = fs::canonicalize(folder)
+        .map_err(|error| format!("Cannot open selected folder: {error}"))?;
+    if !selected.is_dir() {
+        return Err("Select a project folder.".into());
+    }
+    let mut result = Vec::new();
+    let mut pending = vec![(selected, 0)];
+    let mut inspected = 0;
+    while let Some((directory, depth)) = pending.pop() {
+        inspected += 1;
+        if inspected > 500 {
+            return Err("Too many folders to inspect. Select the project folder directly.".into());
+        }
+        if directory.join("fpga.config.psd1").is_file() {
+            let manifest = directory.join("fpga.project.json");
+            let identification = if manifest.is_file() {
+                if fs::metadata(&manifest)
+                    .map_err(|error| error.to_string())?
+                    .len()
+                    > 1024 * 1024
+                {
+                    return Err("Project metadata is too large.".into());
+                }
+                let value: serde_json::Value = serde_json::from_slice(
+                    &fs::read(&manifest).map_err(|error| error.to_string())?,
+                )
+                .map_err(|error| format!("Invalid fpga.project.json: {error}"))?;
+                let version = value
+                    .get("schemaVersion")
+                    .and_then(serde_json::Value::as_u64);
+                if !matches!(version, Some(1 | 2)) {
+                    return Err("Unsupported fpga.project.json version. Update Studio before opening this project.".into());
+                }
+                "Studio project · fpga.project.json"
+            } else {
+                "Existing FPGA project · fpga.config.psd1"
+            };
+            result.push(RecognizedProject {
+                path: child_process_path(&directory)
+                    .to_string_lossy()
+                    .into_owned(),
+                name: project_display_name(&directory),
+                identification: identification.into(),
+            });
+            // A workspace root can contain multiple projects, so inspect its children too.
+        }
+        if depth < 2 {
+            for entry in fs::read_dir(&directory)
+                .map_err(|error| error.to_string())?
+                .take(501)
+            {
+                let entry = entry.map_err(|error| error.to_string())?;
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                if name.starts_with('.')
+                    || IGNORED_DIRECTORIES.contains(&name.as_ref())
+                    || name == "build"
+                {
+                    continue;
+                }
+                if entry
+                    .file_type()
+                    .map_err(|error| error.to_string())?
+                    .is_dir()
+                {
+                    pending.push((entry.path(), depth + 1));
+                }
+            }
+        }
+    }
+    result.sort_by(|left, right| left.path.cmp(&right.path));
+    if result.is_empty() {
+        return Err("No Studio project found. Select a folder containing fpga.config.psd1. Studio-created projects also include fpga.project.json; HDL files alone do not identify a board or pin mapping.".into());
+    }
+    Ok(result)
+}
+
 pub fn open_project(root: &str, project_path: &str) -> Result<WorkspaceSnapshot, String> {
     let root = canonical_workspace(root)?;
     let directory = resolve_project_path(&root, project_path)?;
@@ -69,8 +186,9 @@ pub fn open_project(root: &str, project_path: &str) -> Result<WorkspaceSnapshot,
     state.recent_projects.insert(0, relative.clone());
     state.recent_projects.truncate(12);
     state.active_project = relative.clone();
+    let snapshot = snapshot_for(&root, &relative, state.recent_projects.clone())?;
     persist_workspace_state(&root, &state)?;
-    snapshot_for(&root, &relative, state.recent_projects)
+    Ok(snapshot)
 }
 
 fn snapshot_for(
@@ -716,7 +834,7 @@ fn project_display_name(directory: &Path) -> String {
         if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&content) {
             if let Some(name) = value.get("name").and_then(serde_json::Value::as_str) {
                 if !name.trim().is_empty() {
-                    return name.trim().to_owned();
+                    return name.trim().chars().take(160).collect();
                 }
             }
         }
@@ -1255,6 +1373,30 @@ mod tests {
     use std::path::Path;
 
     #[test]
+    fn recognizes_portable_and_legacy_projects_without_modifying_sources() {
+        let root = std::env::temp_dir().join(format!("fpga-recognition-{}", uuid::Uuid::new_v4()));
+        let modern = root.join("My project");
+        let legacy = root.join("Old project");
+        fs::create_dir_all(&modern).unwrap();
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(modern.join("fpga.config.psd1"), "@{ Top = 'top' }").unwrap();
+        fs::write(legacy.join("fpga.config.psd1"), "@{ Top = 'top' }").unwrap();
+        let metadata = r#"{"schemaVersion":2,"name":"My UART"}"#;
+        fs::write(modern.join("fpga.project.json"), metadata).unwrap();
+        let found = super::recognize_projects(&root.to_string_lossy()).unwrap();
+        assert_eq!(found.len(), 2);
+        assert!(found.iter().any(|project| project.name == "My UART"
+            && project.identification.contains("fpga.project.json")));
+        assert_eq!(
+            fs::read_to_string(modern.join("fpga.project.json")).unwrap(),
+            metadata
+        );
+        fs::write(modern.join("fpga.project.json"), "invalid json").unwrap();
+        assert!(super::recognize_projects(&modern.to_string_lossy()).is_err());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
     fn accepts_friendly_project_names_and_rejects_unsafe_folder_names() {
         for name in ["UART Terminal v1", "beginner-led", "控制器_lab"] {
             assert_eq!(validate_project_name(name).unwrap(), name);
@@ -1788,6 +1930,181 @@ mod tests {
                 .is_err()
         );
         assert!(!root.join("projects/05_invalid_target").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn packaged_workspace_is_writable_and_preserves_user_edits() {
+        let root = std::env::temp_dir().join(format!("tang-bundle-{}", uuid::Uuid::new_v4()));
+        let source = root.join("resources");
+        let destination = root.join("user");
+        fs::create_dir_all(source.join("rtl")).unwrap();
+        fs::write(source.join("fpga.ps1"), "runner").unwrap();
+        fs::write(source.join("rtl/top.sv"), "original").unwrap();
+        super::copy_bundled_workspace(&source, &destination).unwrap();
+        fs::write(destination.join("rtl/top.sv"), "user edit").unwrap();
+        super::copy_bundled_workspace(&source, &destination).unwrap();
+        assert_eq!(
+            fs::read_to_string(destination.join("rtl/top.sv")).unwrap(),
+            "user edit"
+        );
+        assert!(super::canonical_workspace(&destination.to_string_lossy()).is_ok());
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+// Read-only refresh never changes active-project settings or conflicts with a running build.
+pub fn project_tree(root: &str, project: &str) -> Result<Vec<ProjectNode>, String> {
+    let root = canonical_workspace(root)?;
+    let directory = resolve_project_path(&root, project)?;
+    let mut seen = 0;
+    list_directory(&root, &directory, &directory, &mut seen)
+}
+#[derive(serde::Deserialize)]
+pub struct FileProbe {
+    pub path: String,
+    pub version: String,
+}
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileUpdate {
+    pub path: String,
+    pub version: String,
+    pub content: Option<String>,
+    pub missing: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+pub fn sync_files(
+    root: &str,
+    project: &str,
+    files: Vec<FileProbe>,
+) -> Result<Vec<FileUpdate>, String> {
+    if files.len() > 64 {
+        return Err("At most 64 open files can be synchronized at once".into());
+    }
+    let root = canonical_workspace(root)?;
+    let directory = resolve_project_path(&root, project)?;
+    Ok(files
+        .into_iter()
+        .map(|probe| {
+            let read = || -> Result<FileUpdate, String> {
+                let path = editable_file_path(&root, &probe.path)?;
+                if !path.starts_with(&directory) {
+                    return Err("File is outside the active project".into());
+                }
+                let metadata = match fs::metadata(&path) {
+                    Ok(value) => value,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        return Ok(FileUpdate {
+                            path: probe.path.clone(),
+                            version: "missing".into(),
+                            content: None,
+                            missing: true,
+                            error: None,
+                        })
+                    }
+                    Err(error) => return Err(error.to_string()),
+                };
+                if metadata.len() > 4 * 1024 * 1024 {
+                    return Err("File exceeds the 4 MiB editor limit".into());
+                }
+                let modified = metadata
+                    .modified()
+                    .ok()
+                    .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|value| value.as_nanos())
+                    .unwrap_or_default();
+                let version = format!("{}:{modified}", metadata.len());
+                let content = if version != probe.version {
+                    Some(fs::read_to_string(&path).map_err(|error| error.to_string())?)
+                } else {
+                    None
+                };
+                Ok(FileUpdate {
+                    path: probe.path.clone(),
+                    version,
+                    content,
+                    missing: false,
+                    error: None,
+                })
+            };
+            // One unavailable file must not prevent other open files from updating.
+            read().unwrap_or_else(|error| FileUpdate {
+                path: probe.path,
+                version: probe.version,
+                content: None,
+                missing: false,
+                error: Some(error),
+            })
+        })
+        .collect())
+}
+
+#[cfg(test)]
+mod synchronization_tests {
+    use super::*;
+    #[test]
+    fn refresh_detects_disk_changes_deletion_and_bounds_without_changing_workspace_state() {
+        let root = std::env::temp_dir().join(format!("tang-sync-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(root.join("rtl")).unwrap();
+        fs::write(root.join("fpga.ps1"), "# fixture").unwrap();
+        fs::write(root.join("fpga.config.psd1"), "@{ Top = 'top' }").unwrap();
+        fs::write(root.join("rtl/top.sv"), "module top; endmodule").unwrap();
+        let probe = |version: String| {
+            vec![FileProbe {
+                path: "rtl/top.sv".into(),
+                version,
+            }]
+        };
+        let updates = sync_files(&root.to_string_lossy(), ".", probe(String::new())).unwrap();
+        assert_eq!(updates[0].content.as_deref(), Some("module top; endmodule"));
+        let version = updates[0].version.clone();
+        assert!(
+            sync_files(&root.to_string_lossy(), ".", probe(version.clone())).unwrap()[0]
+                .content
+                .is_none()
+        );
+        fs::write(root.join("rtl/top.sv"), "module changed; endmodule").unwrap();
+        assert_eq!(
+            sync_files(&root.to_string_lossy(), ".", probe(version)).unwrap()[0]
+                .content
+                .as_deref(),
+            Some("module changed; endmodule")
+        );
+        fs::remove_file(root.join("rtl/top.sv")).unwrap();
+        assert!(sync_files(&root.to_string_lossy(), ".", probe(String::new())).unwrap()[0].missing);
+        assert!(sync_files(
+            &root.to_string_lossy(),
+            ".",
+            vec![FileProbe {
+                path: "../outside.sv".into(),
+                version: String::new()
+            }]
+        )
+        .unwrap()[0]
+            .error
+            .is_some());
+        fs::write(root.join("rtl/top.sv"), "healthy file").unwrap();
+        let mixed = sync_files(
+            &root.to_string_lossy(),
+            ".",
+            vec![
+                FileProbe {
+                    path: "removed/folder/top.sv".into(),
+                    version: String::new(),
+                },
+                FileProbe {
+                    path: "rtl/top.sv".into(),
+                    version: String::new(),
+                },
+            ],
+        )
+        .unwrap();
+        assert!(mixed[0].error.is_some());
+        assert_eq!(mixed[1].content.as_deref(), Some("healthy file"));
+        assert!(!root.join(".fpga-studio/workspace.json").exists());
         fs::remove_dir_all(root).unwrap();
     }
 }
